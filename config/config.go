@@ -13,8 +13,9 @@ type Config struct {
 	}
 	Database            DatabaseConfig `mapstructure:"database" json:"database,omitempty"`
 	Redis               RedisConfig    `mapstructure:"redis" json:"redis,omitempty"`
-	Certiicate          string         `mapstructure:"certicate" json:"certicate,omitempty"`
+	Certificate         string         `mapstructure:"certificate" json:"certificate,omitempty"`
 	CertificatePassword string         `mapstructure:"certificate-password" json:"certificate-password,omitempty"`
+	Production          bool           `mapstructure:"production" json:"production,omitempty"`
 }
 type DatabaseConfig struct {
 	Database string `mapstructure:"database" json:"database,omitempty"`

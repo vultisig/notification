@@ -82,7 +82,7 @@ func (d *Database) UnregisterDevice(ctx context.Context, vaultId, tokenId string
 	}
 	return nil
 }
-func (d *Database) GetRegisteredDevices(ctx context.Context, vaultId string) ([]models.DeviceDBModel, error) {
+func (d *Database) GetRegisteredDevices(ctx context.Context, vaultId string, requestPartyId string) ([]models.DeviceDBModel, error) {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return nil, err
 	}
@@ -94,7 +94,8 @@ func (d *Database) GetRegisteredDevices(ctx context.Context, vaultId string) ([]
 		cancel()
 	}()
 	var devices []models.DeviceDBModel
-	dbResult := d.db.WithContext(newContext).Where("vault_id = ?", vaultId).Find(&devices)
+	// don't send notification to itself
+	dbResult := d.db.WithContext(newContext).Where("vault_id = ? and party_name != ?", vaultId, requestPartyId).Find(&devices)
 	if dbResult.Error != nil {
 		return nil, fmt.Errorf("failed to query devices: %w", dbResult.Error)
 	}

@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
  .idea/
  .vscode/
+.idea/*
+cmd/server/server
+cmd/worker/worker
+*.p12
+config.json

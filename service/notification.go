@@ -11,6 +11,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/certificate"
+	"github.com/sideshow/apns2/payload"
 	"github.com/sirupsen/logrus"
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
@@ -26,10 +27,12 @@ type NotificationService struct {
 	imageServer string
 	certificate string
 	password    string
+	isProd      bool
 }
 
 func NewNotificationService(sdClient *statsd.Client,
-	db *storage.Database, imageServer, certificate, password string) (*NotificationService, error) {
+	db *storage.Database,
+	imageServer, certificate, password string, isProd bool) (*NotificationService, error) {
 	if sdClient == nil {
 		return nil, fmt.Errorf("sdClient is nil")
 	}
@@ -43,6 +46,7 @@ func NewNotificationService(sdClient *statsd.Client,
 		imageServer: imageServer,
 		certificate: certificate,
 		password:    password,
+		isProd:      isProd,
 	}, nil
 }
 func (s *NotificationService) incCounter(name string, tags []string) {
@@ -72,16 +76,18 @@ func (s *NotificationService) HandleNotification(ctx context.Context, task *asyn
 		return fmt.Errorf("invalid notification request: %s,%w", err, asynq.SkipRetry)
 	}
 
-	s.logger.Infof("Processing notification for user: %s, message: %s", request.VaultId, request.ImageId)
-
+	s.logger.Infof("Processing notification for user: %s, message: %s", request.VaultId, request.VaultName)
+	if err := s.processNotificationRequest(ctx, request); err != nil {
+		s.logger.Errorf("failed to process notification: %v", err)
+	}
 	return nil
 }
 
-func (s *NotificationService) ProcessNotificationRequest(ctx context.Context, request models.NotificationRequest) error {
+func (s *NotificationService) processNotificationRequest(ctx context.Context, request models.NotificationRequest) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err
 	}
-	deviceRegistration, err := s.db.GetRegisteredDevices(ctx, request.VaultId)
+	deviceRegistration, err := s.db.GetRegisteredDevices(ctx, request.VaultId, request.LocalPartyId)
 	if err != nil {
 		s.logger.Errorf("failed to get registered devices: %v", err)
 		return fmt.Errorf("failed to get registered devices: %w", err)
@@ -92,7 +98,6 @@ func (s *NotificationService) ProcessNotificationRequest(ctx context.Context, re
 	}
 
 	for _, device := range deviceRegistration {
-		s.logger.Infof("Found registered device: %v", device)
 		if strings.EqualFold(device.DeviceType, "apple") {
 			if err := s.processAppleNotification(ctx, device, request); err != nil {
 				s.logger.Errorf("failed to process apple notification: %v", err)
@@ -108,7 +113,7 @@ func (s *NotificationService) ProcessNotificationRequest(ctx context.Context, re
 }
 
 func (s *NotificationService) processAppleNotification(ctx context.Context, device models.DeviceDBModel, request models.NotificationRequest) error {
-	cert, err := certificate.FromP12File(s.certificate, "")
+	cert, err := certificate.FromP12File(s.certificate, s.password)
 	if err != nil {
 		s.logger.Errorf("failed to read certificate: %v", err)
 		return fmt.Errorf("failed to read certificate: %w", err)
@@ -117,9 +122,19 @@ func (s *NotificationService) processAppleNotification(ctx context.Context, devi
 	notification := &apns2.Notification{}
 	notification.DeviceToken = device.Token
 	notification.Topic = appID
-	notification.Payload = []byte(`{"aps":{"alert":"Hello!"}}`) // See Payload section below
+	p := payload.NewPayload().Alert(nil).
+		AlertTitle("Vultisig Keysign request").
+		AlertSubtitle("Vault: " + request.VaultName).
+		AlertBody(request.QRCodeData).
+		Sound("default")
+	notification.Payload = p // See Payload section below
 
-	client := apns2.NewClient(cert).Production()
+	var client *apns2.Client
+	if s.isProd {
+		client = apns2.NewClient(cert).Production()
+	} else {
+		client = apns2.NewClient(cert).Development()
+	}
 	res, err := client.PushWithContext(ctx, notification)
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
