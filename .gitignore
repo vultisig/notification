@@ -35,3 +35,4 @@ cmd/server/server
 cmd/worker/worker
 *.p12
 config.json
+.DS_Store
