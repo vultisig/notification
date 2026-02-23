@@ -62,6 +62,9 @@ func (s *NotificationService) measureTime(name string, start time.Time, tags []s
 
 // HandleNotification processes a notification task.
 func (s *NotificationService) HandleNotification(ctx context.Context, task *asynq.Task) error {
+	start := time.Now()
+	defer s.measureTime("notification.handle.duration", start, []string{})
+
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err
 	}
@@ -87,6 +90,7 @@ func (s *NotificationService) processNotificationRequest(ctx context.Context, re
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err
 	}
+
 	deviceRegistration, err := s.db.GetRegisteredDevices(ctx, request.VaultId, request.LocalPartyId)
 	if err != nil {
 		s.logger.Errorf("failed to get registered devices: %v", err)
@@ -113,6 +117,7 @@ func (s *NotificationService) processNotificationRequest(ctx context.Context, re
 }
 
 func (s *NotificationService) processAppleNotification(ctx context.Context, device models.DeviceDBModel, request models.NotificationRequest) error {
+	defer s.measureTime("notification.apple.duration", time.Now(), []string{})
 	cert, err := certificate.FromP12File(s.certificate, s.password)
 	if err != nil {
 		s.logger.Errorf("failed to read certificate: %v", err)
@@ -153,5 +158,7 @@ func (s *NotificationService) processAppleNotification(ctx context.Context, devi
 }
 
 func (s *NotificationService) processAndroidNotification(ctx context.Context, device models.DeviceDBModel, request models.NotificationRequest) error {
+	defer s.measureTime("notification.android.duration", time.Now(), []string{})
+	// TODO: implement android notification
 	return nil
 }

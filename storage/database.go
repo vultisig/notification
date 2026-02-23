@@ -41,9 +41,6 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 	return &Database{db: database}, nil
 }
 
-func (d *Database) getNewTimeoutContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, timeout)
-}
 func (d *Database) RegisterDevice(ctx context.Context, device models.Device) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err
