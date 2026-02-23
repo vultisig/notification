@@ -147,7 +147,7 @@ func (s *NotificationService) processAppleNotification(ctx context.Context, devi
 	if res.Sent() {
 		return nil
 	}
-	s.logger.Errorf("failed to send notification: %v %v", res.StatusCode, res.Reason)
+	s.logger.Errorf("failed to send notification: %d %s, vault: %s", res.StatusCode, res.Reason, request.VaultName)
 	if res.StatusCode == 410 || res.StatusCode == 400 {
 		// Unregister the device
 		if err := s.db.UnregisterDevice(ctx, device.VaultId, device.Token); err != nil {
