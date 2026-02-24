@@ -121,8 +121,6 @@ func (s *Server) Register(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	c.Logger().Infof("Device registered: %s, %s, %s", deviceRegisterReq.VaultId, deviceRegisterReq.PartyName, deviceRegisterReq.DeviceType)
-
 	return nil
 }
 
