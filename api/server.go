@@ -18,18 +18,20 @@ import (
 )
 
 type Server struct {
-	port        int64
-	sdClient    *statsd.Client
-	logger      *logrus.Logger
-	db          *storage.Database
-	queueClient *asynq.Client
-	cacheClient *cache.RedisStorage
+	port           int64
+	sdClient       *statsd.Client
+	logger         *logrus.Logger
+	db             *storage.Database
+	queueClient    *asynq.Client
+	cacheClient    *cache.RedisStorage
+	vapidPublicKey string
 }
 
 func NewServer(port int64, sdClient *statsd.Client,
 	db *storage.Database,
 	queueClient *asynq.Client,
-	cacheClient *cache.RedisStorage) (*Server, error) {
+	cacheClient *cache.RedisStorage,
+	vapidPublicKey string) (*Server, error) {
 	if port <= 0 {
 		return nil, fmt.Errorf("invalid port number: %d", port)
 	}
@@ -46,12 +48,13 @@ func NewServer(port int64, sdClient *statsd.Client,
 		return nil, fmt.Errorf("cache client is nil")
 	}
 	return &Server{
-		port:        port,
-		sdClient:    sdClient,
-		logger:      logrus.WithField("module", "api").Logger,
-		db:          db,
-		queueClient: queueClient,
-		cacheClient: cacheClient,
+		port:           port,
+		sdClient:       sdClient,
+		logger:         logrus.WithField("module", "api").Logger,
+		db:             db,
+		queueClient:    queueClient,
+		cacheClient:    cacheClient,
+		vapidPublicKey: vapidPublicKey,
 	}, nil
 }
 
@@ -72,6 +75,7 @@ func (s *Server) StartServer() error {
 	e.POST("/register", s.Register)
 	e.GET("/vault/:vault_id", s.IsVaultRegistered)
 	e.POST("/notify", s.SendNotification)
+	e.GET("/vapid-public-key", s.GetVAPIDPublicKey)
 
 	return e.Start(fmt.Sprintf(":%d", s.port))
 }
@@ -92,6 +96,10 @@ func (s *Server) statsdMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 func (s *Server) Ping(c echo.Context) error {
 	return c.String(http.StatusOK, "Vultisig notification server is running")
+}
+
+func (s *Server) GetVAPIDPublicKey(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{"public_key": s.vapidPublicKey})
 }
 
 // Register  handles device registration for push notifications
