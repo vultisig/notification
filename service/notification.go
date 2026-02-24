@@ -7,12 +7,16 @@ import (
 	"strings"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/messaging"
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/hibiken/asynq"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/certificate"
 	"github.com/sideshow/apns2/payload"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/api/option"
+
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
 	"github.com/vultisig/notification/storage"
@@ -21,25 +25,26 @@ import (
 const appID = "com.vultisig.wallet"
 
 type NotificationService struct {
-	logger      *logrus.Logger
-	sdClient    *statsd.Client
-	db          *storage.Database
-	imageServer string
-	certificate string
-	password    string
-	isProd      bool
+	logger            *logrus.Logger
+	sdClient          *statsd.Client
+	db                *storage.Database
+	imageServer       string
+	certificate       string
+	password          string
+	isProd            bool
+	firebaseMessaging *messaging.Client
 }
 
 func NewNotificationService(sdClient *statsd.Client,
 	db *storage.Database,
-	imageServer, certificate, password string, isProd bool) (*NotificationService, error) {
+	imageServer, certificate, password string, isProd bool, firebaseCredentials string) (*NotificationService, error) {
 	if sdClient == nil {
 		return nil, fmt.Errorf("sdClient is nil")
 	}
 	if db == nil {
 		return nil, fmt.Errorf("db is nil")
 	}
-	return &NotificationService{
+	svc := &NotificationService{
 		logger:      logrus.WithField("service", "notification").Logger,
 		sdClient:    sdClient,
 		db:          db,
@@ -47,7 +52,19 @@ func NewNotificationService(sdClient *statsd.Client,
 		certificate: certificate,
 		password:    password,
 		isProd:      isProd,
-	}, nil
+	}
+	if firebaseCredentials != "" {
+		app, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsFile(firebaseCredentials))
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize firebase app: %w", err)
+		}
+		msgClient, err := app.Messaging(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get firebase messaging client: %w", err)
+		}
+		svc.firebaseMessaging = msgClient
+	}
+	return svc, nil
 }
 func (s *NotificationService) incCounter(name string, tags []string) {
 	if err := s.sdClient.Count(name, 1, tags, 1); err != nil {
@@ -159,6 +176,29 @@ func (s *NotificationService) processAppleNotification(ctx context.Context, devi
 
 func (s *NotificationService) processAndroidNotification(ctx context.Context, device models.DeviceDBModel, request models.NotificationRequest) error {
 	defer s.measureTime("notification.android.duration", time.Now(), []string{})
-	// TODO: implement android notification
+	if s.firebaseMessaging == nil {
+		s.logger.Warn("firebase messaging client not configured, skipping android notification")
+		return nil
+	}
+	msg := &messaging.Message{
+		Notification: &messaging.Notification{
+			Title: "Vultisig Keysign request",
+			Body:  "Vault: " + request.VaultName,
+		},
+		Data: map[string]string{
+			"message": request.QRCodeData,
+		},
+		Token: device.Token,
+	}
+	_, err := s.firebaseMessaging.Send(ctx, msg)
+	if err != nil {
+		if messaging.IsUnregistered(err) {
+			if unregErr := s.db.UnregisterDevice(ctx, device.VaultId, device.Token); unregErr != nil {
+				s.logger.Errorf("failed to unregister device: %v", unregErr)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to send android notification: %w", err)
+	}
 	return nil
 }

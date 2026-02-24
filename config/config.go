@@ -16,6 +16,7 @@ type Config struct {
 	Certificate         string         `mapstructure:"certificate" json:"certificate,omitempty"`
 	CertificatePassword string         `mapstructure:"certificate-password" json:"certificate-password,omitempty"`
 	Production          bool           `mapstructure:"production" json:"production,omitempty"`
+	FirebaseCredentials string         `mapstructure:"firebase-credentials" json:"firebase-credentials,omitempty"`
 }
 type DatabaseConfig struct {
 	Database string `mapstructure:"database" json:"database,omitempty"`
