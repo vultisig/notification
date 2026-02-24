@@ -33,7 +33,7 @@ func main() {
 		panic(err)
 	}
 
-	workerServce, err := service.NewNotificationService(sdClient, db, "https://api.vultisig.com", cfg.Certificate, cfg.CertificatePassword, cfg.Production, cfg.FirebaseCredentials)
+	workerServce, err := service.NewNotificationService(sdClient, db, "https://api.vultisig.com", cfg.Certificate, cfg.CertificatePassword, cfg.Production, cfg.FirebaseCredentials, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubscriber)
 	if err != nil {
 		panic(err)
 	}

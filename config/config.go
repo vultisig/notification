@@ -17,6 +17,9 @@ type Config struct {
 	CertificatePassword string         `mapstructure:"certificate-password" json:"certificate-password,omitempty"`
 	Production          bool           `mapstructure:"production" json:"production,omitempty"`
 	FirebaseCredentials string         `mapstructure:"firebase-credentials" json:"firebase-credentials,omitempty"`
+	VAPIDPublicKey      string         `mapstructure:"vapid-public-key" json:"vapid-public-key,omitempty"`
+	VAPIDPrivateKey     string         `mapstructure:"vapid-private-key" json:"vapid-private-key,omitempty"`
+	VAPIDSubscriber     string         `mapstructure:"vapid-subscriber" json:"vapid-subscriber,omitempty"`
 }
 type DatabaseConfig struct {
 	Database string `mapstructure:"database" json:"database,omitempty"`

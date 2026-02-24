@@ -9,8 +9,8 @@ import (
 type Device struct {
 	VaultId    string `gorm:"type:varchar(255);not null" json:"vault_id" binding:"required"`
 	PartyName  string `gorm:"type:varchar(255);not null" json:"party_name" binding:"required"`
-	Token      string `gorm:"type:varchar(255);not null" json:"token" binding:"required"`
-	DeviceType string `gorm:"type:varchar(255);not null" json:"device_type" binding:"required"` // ios or android
+	Token      string `gorm:"type:text;not null" json:"token" binding:"required"`
+	DeviceType string `gorm:"type:varchar(255);not null" json:"device_type" binding:"required"` // apple, android, or web
 }
 
 type DeviceDBModel struct {

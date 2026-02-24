@@ -36,3 +36,6 @@ cmd/worker/worker
 *.p12
 config.json
 .DS_Store
+
+.devenv
+config.yaml

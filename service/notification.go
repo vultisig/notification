@@ -10,6 +10,7 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
 	"github.com/DataDog/datadog-go/statsd"
+	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/hibiken/asynq"
 	"github.com/sideshow/apns2"
 	"github.com/sideshow/apns2/certificate"
@@ -33,11 +34,16 @@ type NotificationService struct {
 	password          string
 	isProd            bool
 	firebaseMessaging *messaging.Client
+	vapidPublicKey    string
+	vapidPrivateKey   string
+	vapidSubscriber   string
 }
 
 func NewNotificationService(sdClient *statsd.Client,
 	db *storage.Database,
-	imageServer, certificate, password string, isProd bool, firebaseCredentials string) (*NotificationService, error) {
+	imageServer, certificate, password string, isProd bool,
+	firebaseCredentials string,
+	vapidPublicKey, vapidPrivateKey, vapidSubscriber string) (*NotificationService, error) {
 	if sdClient == nil {
 		return nil, fmt.Errorf("sdClient is nil")
 	}
@@ -45,13 +51,16 @@ func NewNotificationService(sdClient *statsd.Client,
 		return nil, fmt.Errorf("db is nil")
 	}
 	svc := &NotificationService{
-		logger:      logrus.WithField("service", "notification").Logger,
-		sdClient:    sdClient,
-		db:          db,
-		imageServer: imageServer,
-		certificate: certificate,
-		password:    password,
-		isProd:      isProd,
+		logger:          logrus.WithField("service", "notification").Logger,
+		sdClient:        sdClient,
+		db:              db,
+		imageServer:     imageServer,
+		certificate:     certificate,
+		password:        password,
+		isProd:          isProd,
+		vapidPublicKey:  vapidPublicKey,
+		vapidPrivateKey: vapidPrivateKey,
+		vapidSubscriber: vapidSubscriber,
 	}
 	if firebaseCredentials != "" {
 		app, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsFile(firebaseCredentials))
@@ -129,6 +138,11 @@ func (s *NotificationService) processNotificationRequest(ctx context.Context, re
 				s.logger.Errorf("failed to process android notification: %v", err)
 			}
 		}
+		if strings.EqualFold(device.DeviceType, "web") {
+			if err := s.processWebPushNotification(ctx, device, request); err != nil {
+				s.logger.Errorf("failed to process web push notification: %v", err)
+			}
+		}
 	}
 	return nil
 }
@@ -200,5 +214,54 @@ func (s *NotificationService) processAndroidNotification(ctx context.Context, de
 		}
 		return fmt.Errorf("failed to send android notification: %w", err)
 	}
+	return nil
+}
+
+func (s *NotificationService) processWebPushNotification(ctx context.Context, device models.DeviceDBModel, request models.NotificationRequest) error {
+	defer s.measureTime("notification.web.duration", time.Now(), []string{})
+
+	var subscription webpush.Subscription
+	if err := json.Unmarshal([]byte(device.Token), &subscription); err != nil {
+		s.logger.Errorf("failed to unmarshal web push subscription for vault %s: %v", device.VaultId, err)
+		if unregErr := s.db.UnregisterDevice(ctx, device.VaultId, device.Token); unregErr != nil {
+			s.logger.Errorf("failed to unregister device with invalid subscription: %v", unregErr)
+		}
+		return fmt.Errorf("failed to unmarshal web push subscription: %w", err)
+	}
+
+	payloadData := map[string]string{
+		"title":    "Vultisig Keysign request",
+		"subtitle": "Vault: " + request.VaultName,
+		"body":     request.QRCodeData,
+	}
+	payloadBytes, err := json.Marshal(payloadData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal web push payload: %w", err)
+	}
+
+	resp, err := webpush.SendNotification(payloadBytes, &subscription, &webpush.Options{
+		Subscriber:      s.vapidSubscriber,
+		VAPIDPublicKey:  s.vapidPublicKey,
+		VAPIDPrivateKey: s.vapidPrivateKey,
+		TTL:             60,
+		Urgency:         webpush.UrgencyHigh,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send web push notification: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 || resp.StatusCode == 410 {
+		s.logger.Infof("web push subscription expired (HTTP %d) for vault %s, unregistering", resp.StatusCode, device.VaultId)
+		if err := s.db.UnregisterDevice(ctx, device.VaultId, device.Token); err != nil {
+			s.logger.Errorf("failed to unregister expired web push device: %v", err)
+		}
+		return nil
+	}
+
+	if resp.StatusCode >= 400 {
+		s.logger.Errorf("web push notification failed with HTTP %d for vault %s", resp.StatusCode, device.VaultId)
+	}
+
 	return nil
 }
