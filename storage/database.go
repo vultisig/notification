@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	driver "github.com/go-sql-driver/mysql"
 	"github.com/vultisig/notification/config"
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -50,22 +50,15 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 	defer func() {
 		cancel()
 	}()
-	var deviceModel models.DeviceDBModel
+	deviceModel := device.GetDeviceDBModel()
 	result := d.db.WithContext(newContext).
-		Where("vault_id = ? AND party_name = ?", device.VaultId, device.PartyName).
-		FirstOrInit(&deviceModel)
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"token", "device_type", "updated_at"}),
+		}).
+		Create(&deviceModel)
 	if result.Error != nil {
-		return fmt.Errorf("failed to look up device: %w", result.Error)
-	}
-	deviceModel.VaultId = device.VaultId
-	deviceModel.PartyName = device.PartyName
-	deviceModel.Token = device.Token
-	deviceModel.DeviceType = device.DeviceType
-	if err := d.db.WithContext(newContext).Save(&deviceModel).Error; err != nil {
-		if isDuplicateKeyError(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to register device: %w", err)
+		return fmt.Errorf("failed to register device: %w", result.Error)
 	}
 	return nil
 }
@@ -140,9 +133,4 @@ func (d *Database) Close() error {
 	}
 
 	return sqlDB.Close()
-}
-
-func isDuplicateKeyError(err error) bool {
-	var mysqlErr *driver.MySQLError
-	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
 }
