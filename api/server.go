@@ -73,7 +73,7 @@ func (s *Server) StartServer() error {
 	e.Use(middleware.RateLimiter(limiterStore))
 	e.GET("/ping", s.Ping)
 	e.POST("/register", s.Register)
-	e.DELETE("/unregister", s.Unregister)
+	e.DELETE("/unregister/:vault_id/:party_name", s.Unregister)
 	e.GET("/vault/:vault_id", s.IsVaultRegistered)
 	e.POST("/notify", s.SendNotification)
 	e.GET("/vapid-public-key", s.GetVAPIDPublicKey)
@@ -127,8 +127,8 @@ func (s *Server) Register(c echo.Context) error {
 
 // Unregister handles device unregistration for push notifications
 func (s *Server) Unregister(c echo.Context) error {
-	vaultId := c.QueryParam("vault_id")
-	partyName := c.QueryParam("party_name")
+	vaultId := c.Param("vault_id")
+	partyName := c.Param("party_name")
 
 	if vaultId == "" || partyName == "" {
 		return c.NoContent(http.StatusBadRequest)
