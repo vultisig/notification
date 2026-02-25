@@ -85,6 +85,30 @@ func (d *Database) UnregisterDevice(ctx context.Context, vaultId, tokenId string
 	}
 	return nil
 }
+func (d *Database) UnregisterDeviceByParty(ctx context.Context, vaultId, partyName string) error {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return err
+	}
+	if vaultId == "" {
+		return fmt.Errorf("vaultId is empty")
+	}
+	if partyName == "" {
+		return fmt.Errorf("partyName is empty")
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer func() {
+		cancel()
+	}()
+	result := d.db.WithContext(newContext).Unscoped().Where("vault_id = ? and party_name = ?", vaultId, partyName).Delete(&models.DeviceDBModel{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to unregister device: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no device found with vaultId: %s and partyName: %s", vaultId, partyName)
+	}
+	return nil
+}
+
 func (d *Database) GetRegisteredDevices(ctx context.Context, vaultId string, requestPartyId string) ([]models.DeviceDBModel, error) {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return nil, err
