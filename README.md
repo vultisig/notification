@@ -117,6 +117,21 @@ Register a device to receive push notifications for a vault.
 
 ---
 
+### `DELETE /unregister/:vault_id/:party_name`
+
+Unregister a device from push notifications for a vault.
+
+**Path parameters:**
+
+| Parameter | Description |
+| --- | --- |
+| `vault_id` | The vault identifier |
+| `party_name` | The local party ID of the device to unregister |
+
+**Responses:** `200 OK` on success, `400` if parameters are missing, `500` on server error or if no matching device is found.
+
+---
+
 ### `GET /vault/:vault_id`
 
 Check whether any devices are registered for a vault.
