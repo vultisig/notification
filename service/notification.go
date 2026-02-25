@@ -160,8 +160,8 @@ func (s *NotificationService) processAppleNotification(ctx context.Context, devi
 	notification.Topic = appID
 	p := payload.NewPayload().Alert(nil).
 		AlertTitle("Vultisig Keysign request").
-		AlertSubtitle("Vault: " + request.VaultName).
-		AlertBody(request.QRCodeData).
+		AlertSubtitle("Vault: "+request.VaultName).
+		Custom("deeplink", request.QRCodeData).
 		Sound("default")
 	notification.Payload = p // See Payload section below
 

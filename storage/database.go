@@ -11,6 +11,7 @@ import (
 	"github.com/vultisig/notification/models"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -50,7 +51,12 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 		cancel()
 	}()
 	deviceModel := device.GetDeviceDBModel()
-	result := d.db.WithContext(newContext).Create(&deviceModel)
+	result := d.db.WithContext(newContext).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"token", "device_type", "updated_at"}),
+		}).
+		Create(&deviceModel)
 	if result.Error != nil {
 		return fmt.Errorf("failed to register device: %w", result.Error)
 	}
@@ -70,7 +76,7 @@ func (d *Database) UnregisterDevice(ctx context.Context, vaultId, tokenId string
 	defer func() {
 		cancel()
 	}()
-	result := d.db.WithContext(newContext).Where("vault_id = ? and token = ?", vaultId, tokenId).Delete(&models.DeviceDBModel{})
+	result := d.db.WithContext(newContext).Unscoped().Where("vault_id = ? and token = ?", vaultId, tokenId).Delete(&models.DeviceDBModel{})
 	if result.Error != nil {
 		return fmt.Errorf("failed to unregister device: %w", result.Error)
 	}
