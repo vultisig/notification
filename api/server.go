@@ -73,7 +73,7 @@ func (s *Server) StartServer() error {
 	e.Use(middleware.RateLimiter(limiterStore))
 	e.GET("/ping", s.Ping)
 	e.POST("/register", s.Register)
-	e.DELETE("/unregister/:vault_id/:party_name", s.Unregister)
+	e.DELETE("/unregister", s.Unregister)
 	e.GET("/vault/:vault_id", s.IsVaultRegistered)
 	e.POST("/notify", s.SendNotification)
 	e.GET("/vapid-public-key", s.GetVAPIDPublicKey)
@@ -127,14 +127,19 @@ func (s *Server) Register(c echo.Context) error {
 
 // Unregister handles device unregistration for push notifications
 func (s *Server) Unregister(c echo.Context) error {
-	vaultId := c.Param("vault_id")
-	partyName := c.Param("party_name")
-
-	if vaultId == "" || partyName == "" {
+	var req struct {
+		VaultId   string `json:"vault_id"`
+		PartyName string `json:"party_name"`
+	}
+	if err := c.Bind(&req); err != nil {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	if err := s.db.UnregisterDeviceByParty(c.Request().Context(), vaultId, partyName); err != nil {
+	if req.VaultId == "" || req.PartyName == "" {
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	if err := s.db.UnregisterDeviceByParty(c.Request().Context(), req.VaultId, req.PartyName); err != nil {
 		c.Logger().Errorf("Failed to unregister device: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
