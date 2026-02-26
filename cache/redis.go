@@ -55,6 +55,10 @@ func (r *RedisStorage) Delete(ctx context.Context, key string) error {
 	}
 	return r.client.Del(ctx, key).Err()
 }
+func (r *RedisStorage) Client() *redis.Client {
+	return r.client
+}
+
 func (r *RedisStorage) Close() error {
 	return r.client.Close()
 }

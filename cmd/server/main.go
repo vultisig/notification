@@ -52,7 +52,7 @@ func main() {
 			log.Printf("fail to close asynq client,err: %v", err)
 		}
 	}()
-	apiServer, err := api.NewServer(cfg.Server.Port, sdClient, db, client, cacheClient, cfg.VAPIDPublicKey)
+	apiServer, err := api.NewServer(cfg.Server.Port, sdClient, db, client, cacheClient, cfg.VAPIDPublicKey, cacheClient.Client())
 	if err != nil {
 		panic(err)
 	}
