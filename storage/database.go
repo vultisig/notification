@@ -9,7 +9,7 @@ import (
 	"github.com/vultisig/notification/config"
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
@@ -23,10 +23,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 	if nil == cfg {
 		return nil, fmt.Errorf("config is nil")
 	}
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database)
-
-	database, err := gorm.Open(mysql.Open(dsn),
+	database, err := gorm.Open(postgres.Open(cfg.DSN),
 		&gorm.Config{
 			Logger: logger.Default.LogMode(logger.Error),
 		})

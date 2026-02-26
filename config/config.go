@@ -22,11 +22,7 @@ type Config struct {
 	VAPIDSubscriber     string         `mapstructure:"vapid-subscriber" json:"vapid-subscriber,omitempty"`
 }
 type DatabaseConfig struct {
-	Database string `mapstructure:"database" json:"database,omitempty"`
-	User     string `mapstructure:"user" json:"user,omitempty"`
-	Password string `mapstructure:"password" json:"password,omitempty"`
-	Host     string `mapstructure:"host" json:"host,omitempty"`
-	Port     int    `mapstructure:"port" json:"port,omitempty"`
+	DSN string `mapstructure:"dsn" json:"dsn,omitempty"`
 }
 
 type RedisConfig struct {
@@ -44,11 +40,7 @@ func GetConfigure() (*Config, error) {
 
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
-	viper.SetDefault("database.database", "notification")
-	viper.SetDefault("database.user", "root")
-	viper.SetDefault("database.password", "password")
-	viper.SetDefault("database.host", "localhost")
-	viper.SetDefault("database.port", 3301)
+	viper.SetDefault("database.dsn", "postgres://localhost:5432/notification")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("fail to reading config file, %w", err)
