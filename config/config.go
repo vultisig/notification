@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -34,7 +36,7 @@ type RedisConfig struct {
 }
 
 func GetConfigure() (*Config, error) {
-	addKeysToViper(viper, reflect.TypeOf(Config{}))
+	addKeysToViper(viper.GetViper(), reflect.TypeOf(Config{}))
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
