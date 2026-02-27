@@ -11,7 +11,6 @@ import (
 	"github.com/vultisig/notification/models"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -47,18 +46,53 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 		return err
 	}
 	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
-	defer func() {
-		cancel()
-	}()
+	defer cancel()
 	deviceModel := device.GetDeviceDBModel()
-	result := d.db.WithContext(newContext).
-		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"token", "device_type", "updated_at"}),
-		}).
-		Create(&deviceModel)
+	result := d.db.WithContext(newContext).Create(&deviceModel)
 	if result.Error != nil {
 		return fmt.Errorf("failed to register device: %w", result.Error)
+	}
+	return nil
+}
+
+func (d *Database) FindDeviceByAuthTokenHash(ctx context.Context, hash string) (*models.DeviceDBModel, error) {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return nil, err
+	}
+	if hash == "" {
+		return nil, fmt.Errorf("hash is empty")
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer cancel()
+	var device models.DeviceDBModel
+	if err := d.db.WithContext(newContext).Where("auth_token_hash = ?", hash).First(&device).Error; err != nil {
+		return nil, err
+	}
+	return &device, nil
+}
+
+func (d *Database) UpdateDevice(ctx context.Context, device *models.DeviceDBModel) error {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return err
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer cancel()
+	result := d.db.WithContext(newContext).Save(device)
+	if result.Error != nil {
+		return fmt.Errorf("failed to update device: %w", result.Error)
+	}
+	return nil
+}
+
+func (d *Database) DeleteDeviceByID(ctx context.Context, id uint) error {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return err
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer cancel()
+	result := d.db.WithContext(newContext).Unscoped().Delete(&models.DeviceDBModel{}, id)
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete device: %w", result.Error)
 	}
 	return nil
 }

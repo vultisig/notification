@@ -7,10 +7,11 @@ import (
 )
 
 type Device struct {
-	VaultId    string `gorm:"type:varchar(255);not null;uniqueIndex:idx_vault_party" json:"vault_id" binding:"required"`
-	PartyName  string `gorm:"type:varchar(255);not null;uniqueIndex:idx_vault_party" json:"party_name" binding:"required"`
-	Token      string `gorm:"type:text;not null" json:"token" binding:"required"`
-	DeviceType string `gorm:"type:varchar(255);not null" json:"device_type" binding:"required"` // apple, android, or web
+	VaultId       string `gorm:"type:varchar(255);not null;index:idx_vault_id" json:"vault_id" binding:"required"`
+	PartyName     string `gorm:"type:varchar(255);not null" json:"party_name" binding:"required"`
+	Token         string `gorm:"type:text;not null" json:"token" binding:"required"`
+	DeviceType    string `gorm:"type:varchar(255);not null" json:"device_type" binding:"required"` // apple, android, or web
+	AuthTokenHash string `gorm:"type:char(64);not null;uniqueIndex:idx_auth_token" json:"-"`
 }
 
 type DeviceDBModel struct {
@@ -25,10 +26,11 @@ func (*DeviceDBModel) TableName() string {
 func (d *Device) GetDeviceDBModel() DeviceDBModel {
 	return DeviceDBModel{
 		Device: Device{
-			VaultId:    d.VaultId,
-			PartyName:  d.PartyName,
-			Token:      d.Token,
-			DeviceType: d.DeviceType,
+			VaultId:       d.VaultId,
+			PartyName:     d.PartyName,
+			Token:         d.Token,
+			DeviceType:    d.DeviceType,
+			AuthTokenHash: d.AuthTokenHash,
 		},
 	}
 }

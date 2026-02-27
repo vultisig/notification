@@ -13,6 +13,7 @@ type Config struct {
 	}
 	Database            DatabaseConfig `mapstructure:"database" json:"database,omitempty"`
 	Redis               RedisConfig    `mapstructure:"redis" json:"redis,omitempty"`
+	Stream              StreamConfig   `mapstructure:"stream" json:"stream,omitempty"`
 	Certificate         string         `mapstructure:"certificate" json:"certificate,omitempty"`
 	CertificatePassword string         `mapstructure:"certificate-password" json:"certificate-password,omitempty"`
 	Production          bool           `mapstructure:"production" json:"production,omitempty"`
@@ -20,6 +21,10 @@ type Config struct {
 	VAPIDPublicKey      string         `mapstructure:"vapid-public-key" json:"vapid-public-key,omitempty"`
 	VAPIDPrivateKey     string         `mapstructure:"vapid-private-key" json:"vapid-private-key,omitempty"`
 	VAPIDSubscriber     string         `mapstructure:"vapid-subscriber" json:"vapid-subscriber,omitempty"`
+}
+
+type StreamConfig struct {
+	MessageTTL int `mapstructure:"message-ttl" json:"message-ttl,omitempty"` // seconds, default 60
 }
 type DatabaseConfig struct {
 	Database string `mapstructure:"database" json:"database,omitempty"`
@@ -49,6 +54,7 @@ func GetConfigure() (*Config, error) {
 	viper.SetDefault("database.password", "password")
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 3301)
+	viper.SetDefault("stream.message-ttl", 60)
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("fail to reading config file, %w", err)

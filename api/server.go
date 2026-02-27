@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -15,6 +16,8 @@ import (
 	"github.com/vultisig/notification/cache"
 	"github.com/vultisig/notification/models"
 	"github.com/vultisig/notification/storage"
+	"github.com/vultisig/notification/stream"
+	"github.com/vultisig/notification/ws"
 )
 
 type Server struct {
@@ -24,13 +27,17 @@ type Server struct {
 	db             *storage.Database
 	queueClient    *asynq.Client
 	cacheClient    *cache.RedisStorage
+	streamStore    *stream.Store
 	vapidPublicKey string
+	wsHandler      *ws.Handler
 }
 
 func NewServer(port int64, sdClient *statsd.Client,
 	db *storage.Database,
 	queueClient *asynq.Client,
 	cacheClient *cache.RedisStorage,
+	streamStore *stream.Store,
+	wsHandler *ws.Handler,
 	vapidPublicKey string) (*Server, error) {
 	if port <= 0 {
 		return nil, fmt.Errorf("invalid port number: %d", port)
@@ -47,6 +54,9 @@ func NewServer(port int64, sdClient *statsd.Client,
 	if cacheClient == nil {
 		return nil, fmt.Errorf("cache client is nil")
 	}
+	if streamStore == nil {
+		return nil, fmt.Errorf("stream store is nil")
+	}
 	return &Server{
 		port:           port,
 		sdClient:       sdClient,
@@ -54,8 +64,20 @@ func NewServer(port int64, sdClient *statsd.Client,
 		db:             db,
 		queueClient:    queueClient,
 		cacheClient:    cacheClient,
+		streamStore:    streamStore,
 		vapidPublicKey: vapidPublicKey,
+		wsHandler:      wsHandler,
 	}, nil
+}
+
+// skipAuth returns true for routes that don't require authentication.
+func skipAuth(c echo.Context) bool {
+	path := c.Path()
+	return path == "/ping" ||
+		path == "/register" ||
+		path == "/vapid-public-key" ||
+		path == "/vault/:vault_id" ||
+		path == "/ws"
 }
 
 func (s *Server) StartServer() error {
@@ -64,19 +86,22 @@ func (s *Server) StartServer() error {
 	e.Pre(middleware.RemoveTrailingSlash())
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	e.Use(middleware.BodyLimit("2M")) // set maximum allowed size for a request body to 2M
+	e.Use(middleware.BodyLimit("2M"))
 	e.Use(s.statsdMiddleware)
 	e.Use(middleware.CORS())
 	limiterStore := middleware.NewRateLimiterMemoryStoreWithConfig(
 		middleware.RateLimiterMemoryStoreConfig{Rate: 5, Burst: 30, ExpiresIn: 5 * time.Minute},
 	)
 	e.Use(middleware.RateLimiter(limiterStore))
+	e.Use(s.authMiddleware(skipAuth))
+
 	e.GET("/ping", s.Ping)
 	e.POST("/register", s.Register)
-	e.DELETE("/unregister/:vault_id/:party_name", s.Unregister)
+	e.DELETE("/unregister", s.Unregister)
 	e.GET("/vault/:vault_id", s.IsVaultRegistered)
 	e.POST("/notify", s.SendNotification)
 	e.GET("/vapid-public-key", s.GetVAPIDPublicKey)
+	e.GET("/ws", echo.WrapHandler(s.wsHandler))
 
 	return e.Start(fmt.Sprintf(":%d", s.port))
 }
@@ -87,7 +112,6 @@ func (s *Server) statsdMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		err := next(c)
 		duration := time.Since(start).Milliseconds()
 
-		// Send metrics to statsd
 		_ = s.sdClient.Incr("http.requests", []string{"path:" + c.Path()}, 1)
 		_ = s.sdClient.Timing("http.response_time", time.Duration(duration)*time.Millisecond, []string{"path:" + c.Path()}, 1)
 		_ = s.sdClient.Incr("http.status."+fmt.Sprint(c.Response().Status), []string{"path:" + c.Path(), "method:" + c.Request().Method}, 1)
@@ -95,6 +119,7 @@ func (s *Server) statsdMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		return err
 	}
 }
+
 func (s *Server) Ping(c echo.Context) error {
 	return c.String(http.StatusOK, "Vultisig notification server is running")
 }
@@ -103,46 +128,83 @@ func (s *Server) GetVAPIDPublicKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"public_key": s.vapidPublicKey})
 }
 
-// Register  handles device registration for push notifications
-// @Summary      Register a device for push notifications
-// @Description  Registers a device using its token and platform (iOS/Android).
+// Register handles device registration for push notifications.
+// Without Authorization header: creates a new device registration.
+// With Authorization header: re-registers (updates) the existing device and rotates the auth token.
 func (s *Server) Register(c echo.Context) error {
-	var deviceRegisterReq models.Device
-	if err := c.Bind(&deviceRegisterReq); err != nil {
+	var deviceReq models.Device
+	if err := c.Bind(&deviceReq); err != nil {
 		c.Logger().Errorf("Failed to bind device register request: %v", err)
 		return c.NoContent(http.StatusBadRequest)
 	}
-
-	if err := deviceRegisterReq.IsValid(); err != nil {
+	if err := deviceReq.IsValid(); err != nil {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	if err := s.db.RegisterDevice(c.Request().Context(), deviceRegisterReq); err != nil {
+	ctx := c.Request().Context()
+
+	// Check for re-registration via auth header.
+	if authHeader := c.Request().Header.Get("Authorization"); authHeader != "" {
+		rawToken, ok := strings.CutPrefix(authHeader, "Bearer ")
+		if !ok || rawToken == "" {
+			return c.NoContent(http.StatusUnauthorized)
+		}
+		oldHash := hashToken(rawToken)
+		existing, err := s.db.FindDeviceByAuthTokenHash(ctx, oldHash)
+		if err != nil {
+			return c.NoContent(http.StatusUnauthorized)
+		}
+
+		// Update device fields.
+		existing.VaultId = deviceReq.VaultId
+		existing.PartyName = deviceReq.PartyName
+		existing.Token = deviceReq.Token
+		existing.DeviceType = deviceReq.DeviceType
+
+		// Rotate auth token.
+		newRawToken, err := generateAuthToken()
+		if err != nil {
+			c.Logger().Errorf("Failed to generate auth token: %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		existing.AuthTokenHash = hashToken(newRawToken)
+
+		if err := s.db.UpdateDevice(ctx, existing); err != nil {
+			c.Logger().Errorf("Failed to update device: %v", err)
+			return c.NoContent(http.StatusInternalServerError)
+		}
+		return c.JSON(http.StatusOK, map[string]string{"auth_token": newRawToken})
+	}
+
+	// New registration.
+	rawToken, err := generateAuthToken()
+	if err != nil {
+		c.Logger().Errorf("Failed to generate auth token: %v", err)
+		return c.NoContent(http.StatusInternalServerError)
+	}
+	deviceReq.AuthTokenHash = hashToken(rawToken)
+
+	if err := s.db.RegisterDevice(ctx, deviceReq); err != nil {
 		c.Logger().Errorf("Failed to register device: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
-
-	return nil
+	return c.JSON(http.StatusOK, map[string]string{"auth_token": rawToken})
 }
 
-// Unregister handles device unregistration for push notifications
+// Unregister deletes the device identified by the auth token.
 func (s *Server) Unregister(c echo.Context) error {
-	vaultId := c.Param("vault_id")
-	partyName := c.Param("party_name")
-
-	if vaultId == "" || partyName == "" {
-		return c.NoContent(http.StatusBadRequest)
+	device := deviceFromContext(c)
+	if device == nil {
+		return c.NoContent(http.StatusUnauthorized)
 	}
-
-	if err := s.db.UnregisterDeviceByParty(c.Request().Context(), vaultId, partyName); err != nil {
+	if err := s.db.DeleteDeviceByID(c.Request().Context(), device.ID); err != nil {
 		c.Logger().Errorf("Failed to unregister device: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
-
 	return c.NoContent(http.StatusOK)
 }
 
-// IsVaultRegistered checks if a vault is registered
+// IsVaultRegistered checks if a vault has any registered devices (public, no auth).
 func (s *Server) IsVaultRegistered(c echo.Context) error {
 	vaultId := c.Param("vault_id")
 	if len(vaultId) == 0 {
@@ -158,18 +220,39 @@ func (s *Server) IsVaultRegistered(c echo.Context) error {
 	if registered {
 		return c.NoContent(http.StatusOK)
 	}
-	return nil
+	return c.NoContent(http.StatusNotFound)
 }
 
+// SendNotification queues a push notification and publishes to the real-time stream.
+// vault_id and local_party_id are derived from the authenticated device.
 func (s *Server) SendNotification(c echo.Context) error {
-	var notificationReq models.NotificationRequest
-	if err := c.Bind(&notificationReq); err != nil {
+	device := deviceFromContext(c)
+	if device == nil {
+		return c.NoContent(http.StatusUnauthorized)
+	}
+
+	var req struct {
+		VaultName  string `json:"vault_name"`
+		QRCodeData string `json:"qr_code_data"`
+	}
+	if err := c.Bind(&req); err != nil {
 		c.Logger().Errorf("Failed to bind notification request: %v", err)
 		return c.NoContent(http.StatusBadRequest)
 	}
-
-	if err := notificationReq.IsValid(); err != nil {
+	if req.VaultName == "" || req.QRCodeData == "" {
 		return c.NoContent(http.StatusBadRequest)
+	}
+
+	ctx := c.Request().Context()
+	vaultID := device.VaultId
+	partyName := device.PartyName
+
+	// Build the full notification request for the Asynq worker.
+	notificationReq := models.NotificationRequest{
+		VaultId:      vaultID,
+		VaultName:    req.VaultName,
+		LocalPartyId: partyName,
+		QRCodeData:   req.QRCodeData,
 	}
 	buf, err := json.Marshal(notificationReq)
 	if err != nil {
@@ -177,16 +260,16 @@ func (s *Server) SendNotification(c echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	result, err := s.cacheClient.Get(c.Request().Context(), notificationReq.VaultId)
+	// Dedup: skip if a recent notification for this vault is still being processed.
+	result, err := s.cacheClient.Get(ctx, vaultID)
 	if err == nil && result != "" {
-		// previous notification is still being processed, skip this one
 		return c.NoContent(http.StatusOK)
 	}
-
-	if err := s.cacheClient.Set(c.Request().Context(), notificationReq.VaultId, notificationReq.VaultId, time.Second*30); err != nil {
-		s.logger.Errorf("Failed to set cache for vault %s: %v", notificationReq.VaultId, err)
+	if err := s.cacheClient.Set(ctx, vaultID, vaultID, time.Second*30); err != nil {
+		s.logger.Errorf("Failed to set cache for vault %s: %v", vaultID, err)
 	}
 
+	// Enqueue for push delivery (APNs/FCM/WebPush).
 	if _, err := s.queueClient.Enqueue(asynq.NewTask(models.TypeNotification, buf),
 		asynq.MaxRetry(-1),
 		asynq.Timeout(time.Minute),
@@ -194,6 +277,14 @@ func (s *Server) SendNotification(c echo.Context) error {
 		asynq.Queue(models.QUEUE_NAME)); err != nil {
 		s.logger.Errorf("Failed to enqueue notification task: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	// Publish to Redis Stream for WebSocket delivery (non-fatal if it fails).
+	if err := s.streamStore.Publish(ctx, vaultID, stream.PublishRequest{
+		VaultName:  req.VaultName,
+		QRCodeData: req.QRCodeData,
+	}); err != nil {
+		s.logger.Errorf("Failed to publish to stream: %v", err)
 	}
 
 	return c.NoContent(http.StatusOK)

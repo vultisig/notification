@@ -6,6 +6,7 @@ require (
 	firebase.google.com/go/v4 v4.19.0
 	github.com/DataDog/datadog-go v4.8.3+incompatible
 	github.com/SherClockHolmes/webpush-go v1.4.0
+	github.com/coder/websocket v1.8.14
 	github.com/hibiken/asynq v0.25.1
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/labstack/gommon v0.4.2
