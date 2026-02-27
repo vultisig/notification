@@ -24,16 +24,6 @@
                     enable = true;
                   };
 
-                  services.mysql = {
-                    enable = true;
-                    package = pkgs.mysql84;
-                    initialDatabases = [
-                      {
-                        name = "notification";
-                      }
-                    ];
-                  };
-
                   services.redis = {
                     enable = true;
                     package = pkgs.redis;
@@ -44,6 +34,7 @@
                     sqlc
                     goose
                     tailwindcss
+                    postgresql
                   ];
 
                   enterShell = ''
