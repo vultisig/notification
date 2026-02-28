@@ -32,7 +32,7 @@ spec:
     spec:
       containers:
         - name: notification-server
-          image: ghcr.io/vultisig/notification/notification-server:latest
+          image: busybox
           command: ["/app/main", "-http", ":80"]
           ports:
             - containerPort: 80
