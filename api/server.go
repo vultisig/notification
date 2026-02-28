@@ -71,6 +71,7 @@ func (s *Server) StartServer() error {
 		middleware.RateLimiterMemoryStoreConfig{Rate: 5, Burst: 30, ExpiresIn: 5 * time.Minute},
 	)
 	e.Use(middleware.RateLimiter(limiterStore))
+	e.GET("/healthz", s.Ping)
 	e.GET("/ping", s.Ping)
 	e.POST("/register", s.Register)
 	e.DELETE("/unregister", s.Unregister)

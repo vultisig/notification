@@ -1,0 +1,83 @@
+name: Build and Deploy to Dev
+
+on:
+  push:
+    branches:
+      - dev
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+  workflow_run:
+    workflows: ["Sync main to dev"]
+    types:
+      - completed
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  NS: agent
+
+jobs:
+  build-server:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    uses: ./.github/workflows/build-push-image.yaml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      service: server
+      registry: ghcr.io
+      image_name: ${{ github.repository }}
+      tag: dev-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      additional_tag: dev-latest
+
+  build-worker:
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    uses: ./.github/workflows/build-push-image.yaml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      service: worker
+      registry: ghcr.io
+      image_name: ${{ github.repository }}
+      tag: dev-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      additional_tag: dev-latest
+
+  deploy:
+    needs: [build-server, build-worker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'dev' || github.ref }}
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_DEV }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update deployment files
+        run: |
+          TAG="dev-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
+
+          sed -i "s|image: busybox|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server:${TAG}|" deploy/01_server.yaml
+          sed -i "s|image: busybox|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/worker:${TAG}|" deploy/01_worker.yaml
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl -n ${{ env.NS }} apply -f deploy/dev
+
+          kubectl -n ${{ env.NS }} apply -f deploy/01_server.yaml
+          kubectl -n ${{ env.NS }} apply -f deploy/01_worker.yaml
+
+          kubectl -n ${{ env.NS }} rollout status deployment/notification-server --timeout=300s
+          kubectl -n ${{ env.NS }} rollout status deployment/notification-worker --timeout=300s
