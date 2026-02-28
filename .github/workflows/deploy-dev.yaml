@@ -79,5 +79,5 @@ jobs:
           kubectl -n ${{ env.NS }} apply -f deploy/01_server.yaml
           kubectl -n ${{ env.NS }} apply -f deploy/01_worker.yaml
 
-          kubectl -n ${{ env.NS }} rollout status deployment/server --timeout=300s
-          kubectl -n ${{ env.NS }} rollout status deployment/worker --timeout=300s
+          kubectl -n ${{ env.NS }} rollout status deployment/notification-server --timeout=300s
+          kubectl -n ${{ env.NS }} rollout status deployment/notification-worker --timeout=300s
