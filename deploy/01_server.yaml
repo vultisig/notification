@@ -41,47 +41,52 @@ spec:
             - name: SERVER_PORT
               valueFrom:
                 configMapKeyRef:
-                  name: notification-server
+                  name: notification
                   key: server-port
             - name: SERVER_HOST
               valueFrom:
                 configMapKeyRef:
-                  name: notification-server
+                  name: notification
                   key: server-host
+            - name: PRODUCTION
+              valueFrom:
+                configMapKeyRef:
+                  name: notification
+                  key: production
             - name: DATABASE_DSN
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: database-dsn
             - name: REDIS_HOST
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: redis-host
             - name: REDIS_PORT
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: redis-port
             - name: REDIS_USER
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: redis-user
             - name: REDIS_PASSWORD
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: redis-password
             - name: REDIS_DB
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: redis-db
             - name: VAPID_PUBLIC_KEY
               valueFrom:
-                 secretKeyRef:
-                  name: notification-server
+                 configMapKeyRef:
+                  name: notification
                   key: vapid-public-key
             - name: VAPID_PRIVATE_KEY
               valueFrom:
@@ -93,6 +98,21 @@ spec:
                  configMapKeyRef:
                   name: notification-server
                   key: vapid-subscriber
+            - name: CERTIFICATE
+              valueFrom:
+                configMapKeyRef:
+                  name: notification
+                  key: certificate
+            - name: CERTIFICATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notification
+                  key: certificate-password
+          volumeMounts:
+            - name: certificate
+              mountPath: /etc/notification/sandbox.p12
+              subPath: sandbox.p12
+              readOnly: true
           resources:
             requests:
               memory: "32Mi"
@@ -108,3 +128,10 @@ spec:
             httpGet:
               path: /healthz
               port: 80
+      volumes:
+        - name: certificate
+          secret:
+            secretName: notification
+            items:
+              - key: sandbox.p12
+                path: sandbox.p12
