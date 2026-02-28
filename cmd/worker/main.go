@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/hibiken/asynq"
 	"github.com/sirupsen/logrus"
 	"github.com/vultisig/notification/config"
+	"github.com/vultisig/notification/internal/health"
 	"github.com/vultisig/notification/models"
 	"github.com/vultisig/notification/service"
 	"github.com/vultisig/notification/storage"
@@ -48,6 +50,14 @@ func main() {
 			},
 		},
 	)
+
+	// Start health probe server
+	healthSrv := health.New(8080)
+	go func() {
+		if err := healthSrv.Start(context.Background(), logrus.StandardLogger()); err != nil {
+			logrus.Errorf("health server error: %v", err)
+		}
+	}()
 
 	// mux maps a type to a handler
 	mux := asynq.NewServeMux()
