@@ -39,8 +39,7 @@ func GetConfigure() (*Config, error) {
 	addKeysToViper(viper.GetViper(), reflect.TypeOf(Config{}))
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	viper.AutomaticEnv()
 
 	viper.SetDefault("server.port", 8080)
