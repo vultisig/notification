@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: notification-worker
-          image: ghcr.io/vultisig/notification/notification-worker:latest
+          image: busybox
           command: ["/app/main"]
           env:
             - name: SERVER_PORT
