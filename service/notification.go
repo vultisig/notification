@@ -18,6 +18,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
 	"github.com/vultisig/notification/storage"
@@ -37,13 +39,15 @@ type NotificationService struct {
 	vapidPublicKey    string
 	vapidPrivateKey   string
 	vapidSubscriber   string
+	redisClient       *redis.Client
 }
 
 func NewNotificationService(sdClient *statsd.Client,
 	db *storage.Database,
 	imageServer, certificate, password string, isProd bool,
 	firebaseCredentials string,
-	vapidPublicKey, vapidPrivateKey, vapidSubscriber string) (*NotificationService, error) {
+	vapidPublicKey, vapidPrivateKey, vapidSubscriber string,
+	redisClient *redis.Client) (*NotificationService, error) {
 	if sdClient == nil {
 		return nil, fmt.Errorf("sdClient is nil")
 	}
@@ -61,6 +65,7 @@ func NewNotificationService(sdClient *statsd.Client,
 		vapidPublicKey:  vapidPublicKey,
 		vapidPrivateKey: vapidPrivateKey,
 		vapidSubscriber: vapidSubscriber,
+		redisClient:     redisClient,
 	}
 	if firebaseCredentials != "" {
 		app, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsFile(firebaseCredentials))
@@ -122,29 +127,44 @@ func (s *NotificationService) processNotificationRequest(ctx context.Context, re
 		s.logger.Errorf("failed to get registered devices: %v", err)
 		return fmt.Errorf("failed to get registered devices: %w", err)
 	}
-	if len(deviceRegistration) == 0 {
+	if len(deviceRegistration) > 0 {
+		for _, device := range deviceRegistration {
+			if strings.EqualFold(device.DeviceType, "apple") {
+				if err := s.processAppleNotification(ctx, device, request); err != nil {
+					s.logger.Errorf("failed to process apple notification: %v", err)
+				}
+			}
+			if strings.EqualFold(device.DeviceType, "android") {
+				if err := s.processAndroidNotification(ctx, device, request); err != nil {
+					s.logger.Errorf("failed to process android notification: %v", err)
+				}
+			}
+			if strings.EqualFold(device.DeviceType, "web") {
+				if err := s.processWebPushNotification(ctx, device, request); err != nil {
+					s.logger.Errorf("failed to process web push notification: %v", err)
+				}
+			}
+		}
+	} else {
 		s.logger.Infof("No registered devices found for vaultId: %s", request.VaultId)
-		return nil
 	}
 
-	for _, device := range deviceRegistration {
-		if strings.EqualFold(device.DeviceType, "apple") {
-			if err := s.processAppleNotification(ctx, device, request); err != nil {
-				s.logger.Errorf("failed to process apple notification: %v", err)
-			}
-		}
-		if strings.EqualFold(device.DeviceType, "android") {
-			if err := s.processAndroidNotification(ctx, device, request); err != nil {
-				s.logger.Errorf("failed to process android notification: %v", err)
-			}
-		}
-		if strings.EqualFold(device.DeviceType, "web") {
-			if err := s.processWebPushNotification(ctx, device, request); err != nil {
-				s.logger.Errorf("failed to process web push notification: %v", err)
-			}
-		}
-	}
+	s.publishWSNotification(ctx, request)
 	return nil
+}
+
+func (s *NotificationService) publishWSNotification(ctx context.Context, request models.NotificationRequest) {
+	if s.redisClient == nil {
+		return
+	}
+	buf, err := json.Marshal(request)
+	if err != nil {
+		s.logger.Errorf("failed to marshal ws notification: %v", err)
+		return
+	}
+	if err := s.redisClient.Publish(ctx, models.WSNotifyChannel, buf).Err(); err != nil {
+		s.logger.Errorf("failed to publish ws notification: %v", err)
+	}
 }
 
 func (s *NotificationService) processAppleNotification(ctx context.Context, device models.DeviceDBModel, request models.NotificationRequest) error {

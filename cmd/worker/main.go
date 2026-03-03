@@ -51,7 +51,15 @@ func main() {
 		panic(err)
 	}
 
-	workerServce, err := service.NewNotificationService(sdClient, db, "https://api.vultisig.com", cfg.Certificate, cfg.CertificatePassword, cfg.Production, cfg.FirebaseCredentials, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubscriber)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Host + ":" + cfg.Redis.Port,
+		Username: cfg.Redis.User,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	defer redisClient.Close()
+
+	workerServce, err := service.NewNotificationService(sdClient, db, "https://api.vultisig.com", cfg.Certificate, cfg.CertificatePassword, cfg.Production, cfg.FirebaseCredentials, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubscriber, redisClient)
 	if err != nil {
 		panic(err)
 	}

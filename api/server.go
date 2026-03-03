@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/vultisig/notification/cache"
 	"github.com/vultisig/notification/models"
@@ -25,13 +27,16 @@ type Server struct {
 	queueClient    *asynq.Client
 	cacheClient    *cache.RedisStorage
 	vapidPublicKey string
+	wsHub          *WSHub
+	redisClient    *redis.Client
 }
 
 func NewServer(port int64, sdClient *statsd.Client,
 	db *storage.Database,
 	queueClient *asynq.Client,
 	cacheClient *cache.RedisStorage,
-	vapidPublicKey string) (*Server, error) {
+	vapidPublicKey string,
+	redisClient *redis.Client) (*Server, error) {
 	if port <= 0 {
 		return nil, fmt.Errorf("invalid port number: %d", port)
 	}
@@ -47,14 +52,17 @@ func NewServer(port int64, sdClient *statsd.Client,
 	if cacheClient == nil {
 		return nil, fmt.Errorf("cache client is nil")
 	}
+	logger := logrus.WithField("module", "api").Logger
 	return &Server{
 		port:           port,
 		sdClient:       sdClient,
-		logger:         logrus.WithField("module", "api").Logger,
+		logger:         logger,
 		db:             db,
 		queueClient:    queueClient,
 		cacheClient:    cacheClient,
 		vapidPublicKey: vapidPublicKey,
+		wsHub:          NewWSHub(logger),
+		redisClient:    redisClient,
 	}, nil
 }
 
@@ -78,6 +86,11 @@ func (s *Server) StartServer() error {
 	e.GET("/vault/:vault_id", s.IsVaultRegistered)
 	e.POST("/notify", s.SendNotification)
 	e.GET("/vapid-public-key", s.GetVAPIDPublicKey)
+	e.GET("/ws", s.HandleWS)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.StartRedisSubscriber(ctx)
 
 	return e.Start(fmt.Sprintf(":%d", s.port))
 }
