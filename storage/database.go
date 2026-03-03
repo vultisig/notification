@@ -129,7 +129,7 @@ func (d *Database) UnregisterDeviceByPartyAndToken(ctx context.Context, vaultId,
 		return fmt.Errorf("failed to unregister device: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("no device found with vaultId: %s, partyName: %s, and token", vaultId, partyName)
+		return fmt.Errorf("no device found with vaultId: %s, partyName: %s, and token: %s...", vaultId, partyName, token[:min(len(token), 8)])
 	}
 	return nil
 }
