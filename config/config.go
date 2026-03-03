@@ -28,11 +28,16 @@ type DatabaseConfig struct {
 }
 
 type RedisConfig struct {
+	URI      string `mapstructure:"uri" json:"uri,omitempty"`
 	Host     string `mapstructure:"host" json:"host,omitempty"`
 	Port     string `mapstructure:"port" json:"port,omitempty"`
 	User     string `mapstructure:"user" json:"user,omitempty"`
 	Password string `mapstructure:"password" json:"password,omitempty"`
 	DB       int    `mapstructure:"db" json:"db,omitempty"`
+}
+
+func (r RedisConfig) UseURI() bool {
+	return r.URI != ""
 }
 
 func GetConfigure() (*Config, error) {

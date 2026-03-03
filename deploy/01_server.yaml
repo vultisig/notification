@@ -58,31 +58,11 @@ spec:
                  secretKeyRef:
                   name: notification
                   key: database-dsn
-            - name: REDIS_HOST
+            - name: REDIS_URI
               valueFrom:
                  secretKeyRef:
-                  name: notification
-                  key: redis-host
-            - name: REDIS_PORT
-              valueFrom:
-                 secretKeyRef:
-                  name: notification
-                  key: redis-port
-            - name: REDIS_USER
-              valueFrom:
-                 secretKeyRef:
-                  name: notification
-                  key: redis-user
-            - name: REDIS_PASSWORD
-              valueFrom:
-                 secretKeyRef:
-                  name: notification
-                  key: redis-password
-            - name: REDIS_DB
-              valueFrom:
-                 secretKeyRef:
-                  name: notification
-                  key: redis-db
+                   name: notification
+                   key: redis-uri
             - name: VAPID_PUBLIC_KEY
               valueFrom:
                  configMapKeyRef:

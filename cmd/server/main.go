@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"github.com/vultisig/notification/api"
 	"github.com/vultisig/notification/cache"
 	"github.com/vultisig/notification/config"
@@ -36,11 +38,26 @@ func main() {
 		panic(err)
 	}
 
-	redisOptions := asynq.RedisClientOpt{
-		Addr:     cfg.Redis.Host + ":" + cfg.Redis.Port,
-		Username: cfg.Redis.User,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+	var redisOptions asynq.RedisClientOpt
+	if cfg.Redis.UseURI() {
+		opt, err := redis.ParseURL(cfg.Redis.URI)
+		if err != nil {
+			panic(fmt.Errorf("failed to parse redis url: %w", err))
+		}
+		redisOptions = asynq.RedisClientOpt{
+			Addr:      opt.Addr,
+			Username:  opt.Username,
+			Password:  opt.Password,
+			DB:        opt.DB,
+			TLSConfig: opt.TLSConfig,
+		}
+	} else {
+		redisOptions = asynq.RedisClientOpt{
+			Addr:     cfg.Redis.Host + ":" + cfg.Redis.Port,
+			Username: cfg.Redis.User,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		}
 	}
 	client := asynq.NewClient(redisOptions)
 
