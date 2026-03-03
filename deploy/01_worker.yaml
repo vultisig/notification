@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: notification-worker
-          image: ghcr.io/vultisig/notification/notification-worker:latest
+          image: busybox
           command: ["/app/main"]
           env:
             - name: SERVER_PORT
@@ -52,12 +52,12 @@ spec:
             - name: VAPID_PRIVATE_KEY
               valueFrom:
                  secretKeyRef:
-                  name: notification-server
+                  name: notification
                   key: vapid-private-key
             - name: VAPID_SUBSCRIBER
               valueFrom:
                  configMapKeyRef:
-                  name: notification-server
+                  name: notification
                   key: vapid-subscriber
             - name: CERTIFICATE
               valueFrom:
