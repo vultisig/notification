@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev
+      - fix/k8s
     paths-ignore:
       - '**.md'
       - '.gitignore'
