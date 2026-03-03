@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -15,12 +16,23 @@ type RedisStorage struct {
 }
 
 func NewRedisStorage(cfg config.RedisConfig) (*RedisStorage, error) {
-	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Host + ":" + cfg.Port,
-		Username: cfg.User,
-		Password: cfg.Password,
-		DB:       cfg.DB,
-	})
+	var client *redis.Client
+
+	if cfg.UseURI() {
+		opt, err := redis.ParseURL(cfg.URI)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse redis url: %w", err)
+		}
+		client = redis.NewClient(opt)
+	} else {
+		client = redis.NewClient(&redis.Options{
+			Addr:     cfg.Host + ":" + cfg.Port,
+			Username: cfg.User,
+			Password: cfg.Password,
+			DB:       cfg.DB,
+		})
+	}
+
 	status := client.Ping(context.Background())
 	if status.Err() != nil {
 		return nil, status.Err()
