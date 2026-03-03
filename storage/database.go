@@ -31,6 +31,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	database.Exec("DROP INDEX IF EXISTS idx_vault_party")
 	err = database.AutoMigrate(&models.DeviceDBModel{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -50,8 +51,8 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 	deviceModel := device.GetDeviceDBModel()
 	result := d.db.WithContext(newContext).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"token", "device_type", "updated_at"}),
+			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}, {Name: "token"}},
+			DoUpdates: clause.AssignmentColumns([]string{"device_type", "updated_at"}),
 		}).
 		Create(&deviceModel)
 	if result.Error != nil {
@@ -102,6 +103,33 @@ func (d *Database) UnregisterDeviceByParty(ctx context.Context, vaultId, partyNa
 	}
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("no device found with vaultId: %s and partyName: %s", vaultId, partyName)
+	}
+	return nil
+}
+
+func (d *Database) UnregisterDeviceByPartyAndToken(ctx context.Context, vaultId, partyName, token string) error {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return err
+	}
+	if vaultId == "" {
+		return fmt.Errorf("vaultId is empty")
+	}
+	if partyName == "" {
+		return fmt.Errorf("partyName is empty")
+	}
+	if token == "" {
+		return fmt.Errorf("token is empty")
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer func() {
+		cancel()
+	}()
+	result := d.db.WithContext(newContext).Unscoped().Where("vault_id = ? and party_name = ? and token = ?", vaultId, partyName, token).Delete(&models.DeviceDBModel{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to unregister device: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no device found with vaultId: %s, partyName: %s, and token: %s...", vaultId, partyName, token[:min(len(token), 8)])
 	}
 	return nil
 }
