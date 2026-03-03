@@ -126,11 +126,14 @@ func (s *Server) Register(c echo.Context) error {
 	return nil
 }
 
-// Unregister handles device unregistration for push notifications
+// Unregister handles device unregistration for push notifications.
+// If token is provided, only the specific device is removed.
+// If token is omitted, all devices for the party are removed.
 func (s *Server) Unregister(c echo.Context) error {
 	var req struct {
 		VaultId   string `json:"vault_id"`
 		PartyName string `json:"party_name"`
+		Token     string `json:"token"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.NoContent(http.StatusBadRequest)
@@ -140,7 +143,13 @@ func (s *Server) Unregister(c echo.Context) error {
 		return c.NoContent(http.StatusBadRequest)
 	}
 
-	if err := s.db.UnregisterDeviceByParty(c.Request().Context(), req.VaultId, req.PartyName); err != nil {
+	var err error
+	if req.Token != "" {
+		err = s.db.UnregisterDeviceByPartyAndToken(c.Request().Context(), req.VaultId, req.PartyName, req.Token)
+	} else {
+		err = s.db.UnregisterDeviceByParty(c.Request().Context(), req.VaultId, req.PartyName)
+	}
+	if err != nil {
 		c.Logger().Errorf("Failed to unregister device: %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
