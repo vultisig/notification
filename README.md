@@ -316,3 +316,38 @@ When running via Docker Compose, [Asynqmon](https://github.com/hibiken/asynqmon)
 ## Metrics
 
 The service reports StatsD metrics to `127.0.0.1:8125` (Datadog-compatible), including request counts, response times, status codes, and notification delivery failures.
+
+## Design Notes
+
+### WebSocket keepalive pings
+
+The server sends a WebSocket ping every **30 seconds** during idle periods. Without this, reverse proxies and load balancers would silently drop long-lived connections that have no traffic:
+
+| Infrastructure | Default idle timeout |
+| --- | --- |
+| Traefik (our ingress) | 180s |
+| AWS ALB / ELB | 60s |
+| GCP GCLB | 600s |
+| Nginx | 75s |
+
+The 30s interval keeps the connection alive under all of these. The client's WebSocket library handles the pong response automatically; no application-level handling is required.
+
+### Redis Streams over Pub/Sub
+
+Redis Pub/Sub is fire-and-forget — messages sent while a client is disconnected are lost. Redis Streams persist messages until they are explicitly acknowledged or trimmed, giving disconnected clients a recovery window (configurable via `stream.message-ttl`, default 60s). For a crypto wallet where a missed signing session means a failed transaction, this durability guarantee matters.
+
+### WebSocket authentication via push token
+
+The WebSocket endpoint uses the device's existing push token (`?vault_id=&party_name=&token=`) instead of a separate credential. The server checks that the `(vault_id, party_name, token)` tuple exists in the `devices` table — the same record created at registration. This means no new secrets to store, rotate, or transmit, and no additional auth layer to maintain.
+
+### Deterministic consumer names
+
+Each WebSocket connection's Redis Stream consumer name is `sha256(vault_id + ":" + party_name + ":" + token)[:16]`. The same device always maps to the same consumer name, so on reconnect it resumes from its exact position in the stream — picking up any unacknowledged messages rather than starting fresh.
+
+### Per-vault connection limit via Redis counter
+
+The connection limit (max 10 per vault) is enforced with a Redis `INCR`/`DECR` counter rather than in-process state. This means the limit is respected across multiple server replicas. The counter carries a 10-minute TTL as a safety net: if the server crashes without decrementing, the counter self-heals rather than permanently blocking new connections.
+
+### `coder/websocket` over `gorilla/websocket`
+
+`gorilla/websocket` is archived (read-only). `coder/websocket` is actively maintained, has native context support for clean shutdown propagation, and handles concurrent writes safely by default — no external mutex required.
