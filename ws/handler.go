@@ -12,21 +12,26 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/vultisig/notification/models"
-	"github.com/vultisig/notification/storage"
 	"github.com/vultisig/notification/stream"
 )
 
 const defaultConnLimit = 10
 
+// deviceFinder is satisfied by *storage.Database (and test mocks).
+type deviceFinder interface {
+	FindDeviceByToken(ctx context.Context, vaultID, party, token string) (*models.DeviceDBModel, error)
+}
+
 type Handler struct {
 	stream    *stream.Store
-	db        *storage.Database
+	db        deviceFinder
 	rdb       *redis.Client
 	connLimit int
 	logger    *logrus.Entry
 }
 
-func NewHandler(s *stream.Store, db *storage.Database, rdb *redis.Client) *Handler {
+// NewHandler creates a Handler. db must implement deviceFinder; *storage.Database satisfies this.
+func NewHandler(s *stream.Store, db deviceFinder, rdb *redis.Client) *Handler {
 	return &Handler{
 		stream:    s,
 		db:        db,

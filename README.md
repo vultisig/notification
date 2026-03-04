@@ -12,20 +12,19 @@ The service is split into two binaries:
 Requests are decoupled via a Redis-backed [Asynq](https://github.com/hibiken/asynq) queue, so the API responds immediately while the worker delivers push notifications in the background. WebSocket clients receive notifications in real-time via Redis Streams with exactly-once delivery guarantees.
 
 ```text
-Client → POST /register → generates auth_token → MySQL DB
-                                                → returns auth_token to client
+Client → POST /register → PostgreSQL DB (upsert on vault_id + party_name + token)
 
 Client → POST /notify → Redis Queue → Worker → APNs / FCM / Web Push
-       [auth required]  → Redis Stream ──→ WebSocket clients (real-time)
+                      → Redis Stream ──→ WebSocket clients (real-time)
 
-Client → GET /ws?auth_token=... → Redis Stream consumer → messages over WebSocket
-                                                        ← ACK from client
+Client → GET /ws?vault_id=&party_name=&token= → Redis Stream consumer → messages
+                                               ← ACK from client
 ```
 
 ## Prerequisites
 
 - Go 1.25+
-- MySQL
+- PostgreSQL
 - Redis
 - Apple APNs P12 certificate (for iOS notifications)
 
@@ -37,7 +36,7 @@ Client → GET /ws?auth_token=... → Redis Stream consumer → messages over We
 docker-compose up -d
 ```
 
-This starts MySQL (port `3301`), Redis (port `6372`), and [Asynqmon](http://localhost:8022) for queue monitoring.
+This starts PostgreSQL (port `5433`), Redis (port `6372`), and [Asynqmon](http://localhost:8022) for queue monitoring.
 
 ### 2. Configure
 
@@ -54,11 +53,7 @@ cp config.example.json config.json
     "port": 8080
   },
   "database": {
-    "host": "localhost",
-    "port": 3301,
-    "user": "root",
-    "password": "password",
-    "database": "notification"
+    "dsn": "host=localhost port=5433 user=postgres password= dbname=notification sslmode=disable"
   },
   "redis": {
     "host": "localhost",
@@ -76,8 +71,11 @@ cp config.example.json config.json
 }
 ```
 
+Alternatively, set `redis.uri` to a Redis connection URL (e.g. `redis://localhost:6372/0`) instead of host/port fields.
+
 | Field | Description |
 | --- | --- |
+| `database.dsn` | PostgreSQL connection string. |
 | `certificate` | Path to Apple APNs P12 certificate. Use `sandbox.p12` for development, `production.p12` for production. |
 | `certificate-password` | Password for the P12 certificate. |
 | `production` | `true` to use APNs production endpoint, `false` for sandbox. |
@@ -95,18 +93,6 @@ go run ./cmd/server
 go run ./cmd/worker
 ```
 
-## Authentication
-
-All endpoints except `/ping`, `/register`, `/vapid-public-key`, and `/vault/:vault_id` require authentication via a Bearer token.
-
-When a device registers via `POST /register`, the server generates a cryptographically random auth token, stores a SHA-256 hash in the database, and returns the raw token. All subsequent API calls must include this token:
-
-```
-Authorization: Bearer <auth_token>
-```
-
-Re-registering with an existing auth token rotates it — a new token is returned and the old one is immediately invalidated.
-
 ## API Endpoints
 
 All endpoints are rate-limited to **5 req/s** (burst of 30) with a **2 MB** body size limit.
@@ -121,7 +107,7 @@ Health check. No auth required.
 
 ### `POST /register`
 
-Register a device to receive notifications for a vault. No auth required for new registrations. Include `Authorization: Bearer <token>` to re-register an existing device (updates fields and rotates the auth token).
+Register a device to receive notifications for a vault. No auth required. Re-registering with the same `(vault_id, party_name, token)` tuple updates `device_type` and is idempotent.
 
 **Request body:**
 
@@ -134,23 +120,27 @@ Register a device to receive notifications for a vault. No auth required for new
 }
 ```
 
-**Response:** `200 OK`
-
-```json
-{
-  "auth_token": "base64url-encoded-token"
-}
-```
-
-Store this token — it's required for all authenticated endpoints and WebSocket connections.
+**Response:** `200 OK` (no body)
 
 ---
 
 ### `DELETE /unregister`
 
-Unregister the device identified by the auth token. **Auth required.**
+Unregister one or all devices for a party.
 
-**Response:** `200 OK` on success, `401` if unauthorized.
+**Request body:**
+
+```json
+{
+  "vault_id":   "string (required)",
+  "party_name": "string (required)",
+  "token":      "string (optional)"
+}
+```
+
+If `token` is provided, only that specific device is removed. If omitted, all devices for the `(vault_id, party_name)` pair are removed.
+
+**Response:** `200 OK` on success.
 
 ---
 
@@ -164,16 +154,20 @@ Check whether any devices are registered for a vault. No auth required.
 
 ### `POST /notify`
 
-Send a notification to all devices registered for the caller's vault (except the caller). **Auth required.** The `vault_id` and sender identity are derived from the auth token.
+Send a notification to all devices registered for the vault (except the sender). No auth required.
 
 **Request body:**
 
 ```json
 {
-  "vault_name":   "string (required)",
-  "qr_code_data": "string (required)"
+  "vault_id":       "string (required)",
+  "vault_name":     "string (required)",
+  "local_party_id": "string (required)",
+  "qr_code_data":   "string (required)"
 }
 ```
+
+`local_party_id` identifies the sender — the server excludes that party from push recipients.
 
 **Response:** `200 OK` — notification queued and published to stream.
 
@@ -187,9 +181,9 @@ Retrieve the VAPID public key for Web Push subscriptions. No auth required.
 
 ---
 
-### `GET /ws?auth_token=<token>`
+### `GET /ws?vault_id=<id>&party_name=<party>&token=<push_token>`
 
-Upgrade to a WebSocket connection for real-time notification delivery. Auth is via query parameter (WebSocket upgrade requests don't reliably support custom headers).
+Upgrade to a WebSocket connection for real-time notification delivery. Auth is via the device's registered push token — the server verifies the `(vault_id, party_name, token)` combination exists in the database.
 
 **Connection limit:** Max 10 concurrent WebSocket connections per vault.
 
@@ -220,7 +214,7 @@ Send an ACK for each received notification. Unacknowledged messages within the T
 1. `POST /notify` validates the request and sets a **30-second Redis lock** to prevent duplicate deliveries.
 2. The notification task is enqueued to Redis with a 1-minute timeout.
 3. The notification is also published to a Redis Stream for real-time WebSocket delivery.
-4. The worker dequeues the task, looks up all registered devices for the `vault_id`, and excludes the sender's `party_name`.
+4. The worker dequeues the task, looks up all registered devices for the `vault_id`, and excludes the sender's `local_party_id`.
 5. Push notifications are dispatched by device type:
    - **Apple** — sent via APNs using the configured P12 certificate.
    - **Android** — sent via FCM (Firebase Cloud Messaging).
@@ -228,10 +222,91 @@ Send an ACK for each received notification. Unacknowledged messages within the T
 6. Invalid push tokens (HTTP `410`/`400` responses) are automatically unregistered from the database.
 7. WebSocket clients connected for the vault receive the notification in real-time. Disconnected clients receive pending messages on reconnect (within the message TTL window).
 
+## Client Integration
+
+### Sending notifications
+
+Any HTTP client can trigger notifications. No auth required:
+
+```
+POST /notify
+Content-Type: application/json
+
+{
+  "vault_id":       "ecdsa-public-key-of-vault",
+  "vault_name":     "My Vault",
+  "local_party_id": "party-1",
+  "qr_code_data":   "vultisig://signing/..."
+}
+```
+
+The server deduplicates notifications per vault (30-second window), then:
+1. Enqueues push delivery (APNs/FCM/Web Push) via Asynq
+2. Publishes to Redis Stream for connected WebSocket clients
+3. Excludes `local_party_id` from push recipients (sender doesn't receive its own notification)
+
+The **Vultisig SDK** handles this via `sdk.notifications.notifyVaultMembers(options)`.
+
+---
+
+### Receiving notifications via WebSocket (Node.js / server-side)
+
+For environments without platform push support (Node.js backends, CLI tools, Electron main process), use the WebSocket endpoint.
+
+**Step 1 — Register with a stable token**
+
+Generate a persistent random token on first run and store it alongside the vault:
+
+```
+POST /register
+Content-Type: application/json
+
+{
+  "vault_id":    "<vault_id>",
+  "party_name":  "<party_name>",
+  "token":       "<stable-uuid-stored-locally>",
+  "device_type": "web"
+}
+→ 200 OK
+```
+
+**Step 2 — Connect WebSocket**
+
+```
+GET wss://api.vultisig.com/ws?vault_id=<vault_id>&party_name=<party_name>&token=<token>
+```
+
+The server verifies the `(vault_id, party_name, token)` tuple exists in the database. Max 10 concurrent connections per vault.
+
+**Step 3 — Handle messages and ACK**
+
+```javascript
+const ws = new WebSocket(
+  'wss://api.vultisig.com/ws?vault_id=<vault_id>&party_name=<party>&token=<token>'
+);
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'notification') {
+    handleSigningRequest(msg.vault_name, msg.qr_code_data);
+    // ACK to prevent re-delivery on reconnect
+    ws.send(JSON.stringify({ type: 'ack', id: msg.id }));
+  }
+};
+```
+
+Always ACK each message. Unacknowledged messages within the 60-second TTL are re-delivered on reconnect.
+
+**Reconnection handling**
+
+Implement exponential backoff on disconnect. On reconnect, the server automatically re-delivers any pending unacknowledged messages.
+
+> **SDK gap note**: The Vultisig SDK's `PushNotificationService` does not yet include a WebSocket client. Node.js consumers must implement the above directly until the SDK adds `WebSocketNotificationService` support.
+
 ## Running Tests
 
 ```bash
-go test ./...
+go test -v -race ./...
 ```
 
 ## Queue Monitoring
