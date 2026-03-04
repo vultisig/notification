@@ -15,7 +15,10 @@ import (
 	"github.com/vultisig/notification/stream"
 )
 
-const defaultConnLimit = 10
+const (
+	defaultConnLimit = 10
+	pingInterval     = 30 * time.Second
+)
 
 // deviceFinder is satisfied by *storage.Database (and test mocks).
 type deviceFinder interface {
@@ -101,15 +104,32 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go h.readLoop(ctx, cancel, conn, vaultID)
 
 	// Write loop: forward stream messages to the WebSocket.
-	for msg := range ch {
-		notification := models.WSNotification{
-			Type:       "notification",
-			ID:         msg.ID,
-			VaultName:  msg.VaultName,
-			QRCodeData: msg.QRCodeData,
-		}
-		if err := wsjson.Write(ctx, conn, notification); err != nil {
-			h.logger.WithError(err).Debug("websocket write")
+	// Ping every 30s to keep the connection alive through proxies and load
+	// balancers (e.g. Traefik default idle timeout is 180s).
+	ticker := time.NewTicker(pingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			notification := models.WSNotification{
+				Type:       "notification",
+				ID:         msg.ID,
+				VaultName:  msg.VaultName,
+				QRCodeData: msg.QRCodeData,
+			}
+			if err := wsjson.Write(ctx, conn, notification); err != nil {
+				h.logger.WithError(err).Debug("websocket write")
+				return
+			}
+		case <-ticker.C:
+			if err := conn.Ping(ctx); err != nil {
+				h.logger.WithError(err).Debug("websocket ping")
+				return
+			}
+		case <-ctx.Done():
 			return
 		}
 	}
