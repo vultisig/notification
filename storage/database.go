@@ -60,6 +60,15 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 }
 
 func (d *Database) FindDeviceByToken(ctx context.Context, vaultId, partyName, token string) (*models.DeviceDBModel, error) {
+	if vaultId == "" {
+		return nil, fmt.Errorf("vaultId is empty")
+	}
+	if partyName == "" {
+		return nil, fmt.Errorf("partyName is empty")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("token is empty")
+	}
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return nil, err
 	}

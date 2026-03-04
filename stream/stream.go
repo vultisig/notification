@@ -65,7 +65,7 @@ func (s *Store) Subscribe(ctx context.Context, vaultID, consumerName string) (<-
 
 	// Create consumer group if it doesn't exist (idempotent).
 	err := s.rdb.XGroupCreateMkStream(ctx, key, group, "0").Err()
-	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+	if err != nil && !strings.HasPrefix(err.Error(), "BUSYGROUP") {
 		return nil, fmt.Errorf("stream group create: %w", err)
 	}
 
@@ -142,7 +142,9 @@ func (s *Store) deliverPending(ctx context.Context, ch chan<- Message, key, grou
 			ts := messageTimestamp(msg.ID)
 			if ts.Before(cutoff) {
 				// Stale message — auto-ACK and skip.
-				s.rdb.XAck(ctx, key, group, msg.ID)
+				if err := s.rdb.XAck(ctx, key, group, msg.ID).Err(); err != nil {
+					s.logger.WithError(err).WithField("msg_id", msg.ID).Debug("auto-ack stale message")
+				}
 				continue
 			}
 			m := parseMessage(msg)

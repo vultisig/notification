@@ -83,7 +83,7 @@ func main() {
 	}
 
 	messageTTL := time.Duration(cfg.Stream.MessageTTL) * time.Second
-	if messageTTL == 0 {
+	if messageTTL <= 0 {
 		messageTTL = 60 * time.Second
 	}
 	streamStore := stream.NewStore(streamRedis, messageTTL)

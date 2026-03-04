@@ -105,7 +105,7 @@ GET /ws?vault_id=<vault_id>&party_name=<party_name>&token=<push_token>
 
 The server verifies the device exists: `WHERE vault_id=? AND party_name=? AND token=?`. This is equivalent to the implicit auth of push delivery — only the device that registered with that push token can connect. No new credential storage needed.
 
-Consumer name is derived deterministically: `sha256(vault_id + ":" + party_name + ":" + token)[:16]`. This ensures the same device reconnects to the same consumer group position, enabling pending message re-delivery.
+Consumer name is derived deterministically: first 8 bytes of `sha256(vault_id + ":" + party_name + ":" + token)`, formatted as 16 hex characters (`h256[:8]`). This ensures the same device reconnects to the same consumer group position, enabling pending message re-delivery.
 
 ### Per-vault connection limit
 

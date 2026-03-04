@@ -56,6 +56,9 @@ func NewServer(port int64, sdClient *statsd.Client,
 	if streamStore == nil {
 		return nil, fmt.Errorf("stream store is nil")
 	}
+	if wsHandler == nil {
+		return nil, fmt.Errorf("ws handler is nil")
+	}
 	return &Server{
 		port:           port,
 		sdClient:       sdClient,
