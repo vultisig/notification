@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -41,22 +42,45 @@ func main() {
 		panic(err)
 	}
 
-	redisAddr := cfg.Redis.Host + ":" + cfg.Redis.Port
-	redisOptions := asynq.RedisClientOpt{
-		Addr:     redisAddr,
-		Username: cfg.Redis.User,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+	var redisOptions asynq.RedisClientOpt
+	if cfg.Redis.UseURI() {
+		opt, err := redis.ParseURL(cfg.Redis.URI)
+		if err != nil {
+			panic(fmt.Errorf("failed to parse redis url: %w", err))
+		}
+		redisOptions = asynq.RedisClientOpt{
+			Addr:      opt.Addr,
+			Username:  opt.Username,
+			Password:  opt.Password,
+			DB:        opt.DB,
+			TLSConfig: opt.TLSConfig,
+		}
+	} else {
+		redisOptions = asynq.RedisClientOpt{
+			Addr:     cfg.Redis.Host + ":" + cfg.Redis.Port,
+			Username: cfg.Redis.User,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		}
 	}
 	asynqClient := asynq.NewClient(redisOptions)
 
 	// Separate Redis client for stream operations (clean ownership, no shared state with cache).
-	streamRedis := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Username: cfg.Redis.User,
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
+	var streamRedis *redis.Client
+	if cfg.Redis.UseURI() {
+		opt, err := redis.ParseURL(cfg.Redis.URI)
+		if err != nil {
+			panic(fmt.Errorf("failed to parse redis url for stream: %w", err))
+		}
+		streamRedis = redis.NewClient(opt)
+	} else {
+		streamRedis = redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Host + ":" + cfg.Redis.Port,
+			Username: cfg.Redis.User,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+	}
 
 	messageTTL := time.Duration(cfg.Stream.MessageTTL) * time.Second
 	if messageTTL == 0 {

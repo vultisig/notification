@@ -9,8 +9,9 @@ import (
 	"github.com/vultisig/notification/config"
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -22,10 +23,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 	if nil == cfg {
 		return nil, fmt.Errorf("config is nil")
 	}
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database)
-
-	database, err := gorm.Open(mysql.Open(dsn),
+	database, err := gorm.Open(postgres.Open(cfg.DSN),
 		&gorm.Config{
 			Logger: logger.Default.LogMode(logger.Error),
 		})
@@ -33,6 +31,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	database.Exec("DROP INDEX IF EXISTS idx_vault_party")
 	err = database.AutoMigrate(&models.DeviceDBModel{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
@@ -48,54 +47,31 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
 	defer cancel()
 	deviceModel := device.GetDeviceDBModel()
-	result := d.db.WithContext(newContext).Create(&deviceModel)
+	result := d.db.WithContext(newContext).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}, {Name: "token"}},
+			DoUpdates: clause.AssignmentColumns([]string{"device_type", "updated_at"}),
+		}).
+		Create(&deviceModel)
 	if result.Error != nil {
 		return fmt.Errorf("failed to register device: %w", result.Error)
 	}
 	return nil
 }
 
-func (d *Database) FindDeviceByAuthTokenHash(ctx context.Context, hash string) (*models.DeviceDBModel, error) {
+func (d *Database) FindDeviceByToken(ctx context.Context, vaultId, partyName, token string) (*models.DeviceDBModel, error) {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return nil, err
-	}
-	if hash == "" {
-		return nil, fmt.Errorf("hash is empty")
 	}
 	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
 	defer cancel()
 	var device models.DeviceDBModel
-	if err := d.db.WithContext(newContext).Where("auth_token_hash = ?", hash).First(&device).Error; err != nil {
+	if err := d.db.WithContext(newContext).Where("vault_id = ? AND party_name = ? AND token = ?", vaultId, partyName, token).First(&device).Error; err != nil {
 		return nil, err
 	}
 	return &device, nil
 }
 
-func (d *Database) UpdateDevice(ctx context.Context, device *models.DeviceDBModel) error {
-	if err := contexthelper.CheckCancellation(ctx); err != nil {
-		return err
-	}
-	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
-	defer cancel()
-	result := d.db.WithContext(newContext).Save(device)
-	if result.Error != nil {
-		return fmt.Errorf("failed to update device: %w", result.Error)
-	}
-	return nil
-}
-
-func (d *Database) DeleteDeviceByID(ctx context.Context, id uint) error {
-	if err := contexthelper.CheckCancellation(ctx); err != nil {
-		return err
-	}
-	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
-	defer cancel()
-	result := d.db.WithContext(newContext).Unscoped().Delete(&models.DeviceDBModel{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete device: %w", result.Error)
-	}
-	return nil
-}
 func (d *Database) UnregisterDevice(ctx context.Context, vaultId, tokenId string) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err
@@ -139,6 +115,33 @@ func (d *Database) UnregisterDeviceByParty(ctx context.Context, vaultId, partyNa
 	}
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("no device found with vaultId: %s and partyName: %s", vaultId, partyName)
+	}
+	return nil
+}
+
+func (d *Database) UnregisterDeviceByPartyAndToken(ctx context.Context, vaultId, partyName, token string) error {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return err
+	}
+	if vaultId == "" {
+		return fmt.Errorf("vaultId is empty")
+	}
+	if partyName == "" {
+		return fmt.Errorf("partyName is empty")
+	}
+	if token == "" {
+		return fmt.Errorf("token is empty")
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer func() {
+		cancel()
+	}()
+	result := d.db.WithContext(newContext).Unscoped().Where("vault_id = ? and party_name = ? and token = ?", vaultId, partyName, token).Delete(&models.DeviceDBModel{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to unregister device: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no device found with vaultId: %s, partyName: %s, and token: %s...", vaultId, partyName, token[:min(len(token), 8)])
 	}
 	return nil
 }

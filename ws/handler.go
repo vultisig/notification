@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"time"
@@ -36,19 +37,19 @@ func NewHandler(s *stream.Store, db *storage.Database, rdb *redis.Client) *Handl
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	authToken := r.URL.Query().Get("auth_token")
-	if authToken == "" {
-		http.Error(w, "missing auth_token", http.StatusUnauthorized)
+	vaultID := r.URL.Query().Get("vault_id")
+	party := r.URL.Query().Get("party_name")
+	token := r.URL.Query().Get("token")
+	if vaultID == "" || party == "" || token == "" {
+		http.Error(w, "missing query params", http.StatusBadRequest)
 		return
 	}
 
-	device, err := h.lookupDevice(r.Context(), authToken)
-	if err != nil {
-		http.Error(w, "invalid auth_token", http.StatusUnauthorized)
+	if _, err := h.db.FindDeviceByToken(r.Context(), vaultID, party, token); err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	vaultID := device.VaultId
 	connKey := fmt.Sprintf("ws:conns:%s", vaultID)
 
 	// Enforce per-vault connection limit.
@@ -80,8 +81,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// Use a prefix of the auth token hash as a deterministic, unique consumer name.
-	consumerName := device.AuthTokenHash[:16]
+	// Consumer name: deterministic per device, derived from push token identity.
+	h256 := sha256.Sum256([]byte(vaultID + ":" + party + ":" + token))
+	consumerName := fmt.Sprintf("%x", h256[:8]) // 16 hex chars, unique per device
 
 	ch, err := h.stream.Subscribe(ctx, vaultID, consumerName)
 	if err != nil {
@@ -121,9 +123,4 @@ func (h *Handler) readLoop(ctx context.Context, cancel context.CancelFunc, conn 
 			}
 		}
 	}
-}
-
-func (h *Handler) lookupDevice(ctx context.Context, rawToken string) (*models.DeviceDBModel, error) {
-	hash := hashToken(rawToken)
-	return h.db.FindDeviceByAuthTokenHash(ctx, hash)
 }

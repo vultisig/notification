@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-server
+  labels:
+    app: notification-server
+spec:
+  selector:
+    app: notification-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-server
+  labels:
+    app: notification-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-server
+  template:
+    metadata:
+      labels:
+        app: notification-server
+    spec:
+      containers:
+        - name: notification-server
+          image: busybox
+          command: ["/app/main", "-http", ":80"]
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: SERVER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: notification
+                  key: server-port
+            - name: SERVER_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: notification
+                  key: server-host
+            - name: PRODUCTION
+              valueFrom:
+                configMapKeyRef:
+                  name: notification
+                  key: production
+            - name: DATABASE_DSN
+              valueFrom:
+                 secretKeyRef:
+                  name: notification
+                  key: database-dsn
+            - name: REDIS_URI
+              valueFrom:
+                 secretKeyRef:
+                   name: notification
+                   key: redis-uri
+            - name: VAPID_PUBLIC_KEY
+              valueFrom:
+                 configMapKeyRef:
+                  name: notification
+                  key: vapid-public-key
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                 secretKeyRef:
+                  name: notification
+                  key: vapid-private-key
+            - name: VAPID_SUBSCRIBER
+              valueFrom:
+                 configMapKeyRef:
+                  name: notification
+                  key: vapid-subscriber
+            - name: CERTIFICATE
+              valueFrom:
+                configMapKeyRef:
+                  name: notification
+                  key: certificate
+            - name: CERTIFICATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notification
+                  key: certificate-password
+          volumeMounts:
+            - name: certificate
+              mountPath: /etc/notification/sandbox.p12
+              subPath: sandbox.p12
+              readOnly: true
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+      volumes:
+        - name: certificate
+          secret:
+            secretName: notification
+            items:
+              - key: sandbox.p12
+                path: sandbox.p12
