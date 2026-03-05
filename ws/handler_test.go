@@ -138,8 +138,11 @@ func TestConnectionLimit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected dial to fail, but succeeded")
 	}
-	if resp != nil && resp.StatusCode != http.StatusTooManyRequests {
-		t.Errorf("status = %d; want %d", resp.StatusCode, http.StatusTooManyRequests)
+	if resp != nil {
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusTooManyRequests {
+			t.Errorf("status = %d; want %d", resp.StatusCode, http.StatusTooManyRequests)
+		}
 	}
 }
 

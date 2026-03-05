@@ -228,7 +228,7 @@ Send an ACK for each received notification. Unacknowledged messages within the T
 
 Any HTTP client can trigger notifications. No auth required:
 
-```
+```http
 POST /notify
 Content-Type: application/json
 
@@ -257,7 +257,7 @@ For environments without platform push support (Node.js backends, CLI tools, Ele
 
 Generate a persistent random token on first run and store it alongside the vault:
 
-```
+```http
 POST /register
 Content-Type: application/json
 
@@ -272,7 +272,7 @@ Content-Type: application/json
 
 **Step 2 — Connect WebSocket**
 
-```
+```text
 GET wss://api.vultisig.com/ws?vault_id=<vault_id>&party_name=<party_name>&token=<token>
 ```
 

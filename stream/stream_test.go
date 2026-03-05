@@ -208,8 +208,12 @@ func TestPublishMultipleVaults(t *testing.T) {
 		t.Fatalf("Subscribe vaultB: %v", err)
 	}
 
-	store.Publish(ctx, "vaultA", stream.PublishRequest{VaultName: "A", QRCodeData: "a"})
-	store.Publish(ctx, "vaultB", stream.PublishRequest{VaultName: "B", QRCodeData: "b"})
+	if err := store.Publish(ctx, "vaultA", stream.PublishRequest{VaultName: "A", QRCodeData: "a"}); err != nil {
+		t.Fatalf("Publish vaultA: %v", err)
+	}
+	if err := store.Publish(ctx, "vaultB", stream.PublishRequest{VaultName: "B", QRCodeData: "b"}); err != nil {
+		t.Fatalf("Publish vaultB: %v", err)
+	}
 
 	got := map[string]bool{}
 	for i := 0; i < 2; i++ {
