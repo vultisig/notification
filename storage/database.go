@@ -45,9 +45,7 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 		return err
 	}
 	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
-	defer func() {
-		cancel()
-	}()
+	defer cancel()
 	deviceModel := device.GetDeviceDBModel()
 	result := d.db.WithContext(newContext).
 		Clauses(clause.OnConflict{
@@ -60,6 +58,29 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 	}
 	return nil
 }
+
+func (d *Database) FindDeviceByToken(ctx context.Context, vaultId, partyName, token string) (*models.DeviceDBModel, error) {
+	if vaultId == "" {
+		return nil, fmt.Errorf("vaultId is empty")
+	}
+	if partyName == "" {
+		return nil, fmt.Errorf("partyName is empty")
+	}
+	if token == "" {
+		return nil, fmt.Errorf("token is empty")
+	}
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return nil, err
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer cancel()
+	var device models.DeviceDBModel
+	if err := d.db.WithContext(newContext).Where("vault_id = ? AND party_name = ? AND token = ?", vaultId, partyName, token).First(&device).Error; err != nil {
+		return nil, err
+	}
+	return &device, nil
+}
+
 func (d *Database) UnregisterDevice(ctx context.Context, vaultId, tokenId string) error {
 	if err := contexthelper.CheckCancellation(ctx); err != nil {
 		return err

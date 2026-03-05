@@ -15,6 +15,7 @@ type Config struct {
 	}
 	Database            DatabaseConfig `mapstructure:"database" json:"database,omitempty"`
 	Redis               RedisConfig    `mapstructure:"redis" json:"redis,omitempty"`
+	Stream              StreamConfig   `mapstructure:"stream" json:"stream,omitempty"`
 	Certificate         string         `mapstructure:"certificate" json:"certificate,omitempty"`
 	CertificatePassword string         `mapstructure:"certificate-password" json:"certificate-password,omitempty"`
 	Production          bool           `mapstructure:"production" json:"production,omitempty"`
@@ -22,6 +23,10 @@ type Config struct {
 	VAPIDPublicKey      string         `mapstructure:"vapid-public-key" json:"vapid-public-key,omitempty"`
 	VAPIDPrivateKey     string         `mapstructure:"vapid-private-key" json:"vapid-private-key,omitempty"`
 	VAPIDSubscriber     string         `mapstructure:"vapid-subscriber" json:"vapid-subscriber,omitempty"`
+}
+
+type StreamConfig struct {
+	MessageTTL int `mapstructure:"message-ttl" json:"message-ttl,omitempty"` // seconds, default 60
 }
 type DatabaseConfig struct {
 	DSN string `mapstructure:"dsn" json:"dsn,omitempty"`

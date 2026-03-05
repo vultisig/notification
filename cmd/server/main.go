@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/hibiken/asynq"
@@ -11,6 +12,8 @@ import (
 	"github.com/vultisig/notification/cache"
 	"github.com/vultisig/notification/config"
 	"github.com/vultisig/notification/storage"
+	"github.com/vultisig/notification/stream"
+	"github.com/vultisig/notification/ws"
 )
 
 func main() {
@@ -18,11 +21,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_ = cfg
+
 	sdClient, err := statsd.New("127.0.0.1:8125")
 	if err != nil {
 		panic(err)
 	}
+
 	db, err := storage.NewDatabase(&cfg.Database)
 	if err != nil {
 		panic(err)
@@ -59,17 +63,46 @@ func main() {
 			DB:       cfg.Redis.DB,
 		}
 	}
-	client := asynq.NewClient(redisOptions)
+	asynqClient := asynq.NewClient(redisOptions)
+
+	// Separate Redis client for stream operations (clean ownership, no shared state with cache).
+	var streamRedis *redis.Client
+	if cfg.Redis.UseURI() {
+		opt, err := redis.ParseURL(cfg.Redis.URI)
+		if err != nil {
+			panic(fmt.Errorf("failed to parse redis url for stream: %w", err))
+		}
+		streamRedis = redis.NewClient(opt)
+	} else {
+		streamRedis = redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Host + ":" + cfg.Redis.Port,
+			Username: cfg.Redis.User,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+	}
+
+	messageTTL := time.Duration(cfg.Stream.MessageTTL) * time.Second
+	if messageTTL <= 0 {
+		messageTTL = 60 * time.Second
+	}
+	streamStore := stream.NewStore(streamRedis, messageTTL)
+
+	wsHandler := ws.NewHandler(streamStore, db, streamRedis)
 
 	defer func() {
 		if err := cacheClient.Close(); err != nil {
-			log.Printf("fail to close redis client,err: %v", err)
+			log.Printf("fail to close redis client, err: %v", err)
 		}
-		if err := client.Close(); err != nil {
-			log.Printf("fail to close asynq client,err: %v", err)
+		if err := asynqClient.Close(); err != nil {
+			log.Printf("fail to close asynq client, err: %v", err)
+		}
+		if err := streamStore.Close(); err != nil {
+			log.Printf("fail to close stream store, err: %v", err)
 		}
 	}()
-	apiServer, err := api.NewServer(cfg.Server.Port, sdClient, db, client, cacheClient, cfg.VAPIDPublicKey)
+
+	apiServer, err := api.NewServer(cfg.Server.Port, sdClient, db, asynqClient, cacheClient, streamStore, wsHandler, cfg.VAPIDPublicKey)
 	if err != nil {
 		panic(err)
 	}
