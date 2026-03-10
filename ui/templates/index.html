@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vultisig Notification Dashboard</title>
+  <link rel="stylesheet" href="/ui/static/dist/output.css">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+  <div class="max-w-6xl mx-auto px-4 py-8">
+    <h1 class="text-3xl font-bold mb-8">Vultisig Notification Dashboard</h1>
+
+    <!-- Queue Status -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4">Queue Status</h2>
+      <div id="queue-cards" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div class="bg-gray-800 rounded-lg p-4 text-center">
+          <div class="text-sm text-gray-400">Pending</div>
+          <div id="q-pending" class="text-2xl font-bold mt-1">-</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 text-center">
+          <div class="text-sm text-gray-400">Active</div>
+          <div id="q-active" class="text-2xl font-bold mt-1">-</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 text-center">
+          <div class="text-sm text-gray-400">Completed</div>
+          <div id="q-completed" class="text-2xl font-bold mt-1">-</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 text-center">
+          <div class="text-sm text-gray-400">Retry</div>
+          <div id="q-retry" class="text-2xl font-bold mt-1">-</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 text-center">
+          <div class="text-sm text-gray-400">Archived</div>
+          <div id="q-archived" class="text-2xl font-bold mt-1">-</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 text-center">
+          <div class="text-sm text-gray-400">Failed</div>
+          <div id="q-failed" class="text-2xl font-bold mt-1">-</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Registered Vaults -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4">Registered Vaults</h2>
+      <div class="bg-gray-800 rounded-lg overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-gray-700">
+            <tr>
+              <th class="px-4 py-3 text-sm font-medium text-gray-300"></th>
+              <th class="px-4 py-3 text-sm font-medium text-gray-300">Vault ID</th>
+              <th class="px-4 py-3 text-sm font-medium text-gray-300">Devices</th>
+            </tr>
+          </thead>
+          <tbody id="vault-table-body" class="divide-y divide-gray-700">
+            <tr><td colspan="3" class="px-4 py-3 text-gray-500">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Send Notification -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4">Send Notification</h2>
+      <form id="notify-form" class="bg-gray-800 rounded-lg p-6 space-y-4 max-w-lg">
+        <div>
+          <label for="vault-select" class="block text-sm font-medium text-gray-300 mb-1">Vault ID</label>
+          <select id="vault-select" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select a vault...</option>
+          </select>
+        </div>
+        <div>
+          <label for="vault-name" class="block text-sm font-medium text-gray-300 mb-1">Vault Name</label>
+          <input id="vault-name" type="text" required class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="My Vault">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-1">Local Party ID</label>
+          <div class="flex items-center gap-2 mb-2">
+            <label class="text-sm text-gray-400"><input type="radio" name="party-mode" value="select" checked class="mr-1">Select device</label>
+            <label class="text-sm text-gray-400"><input type="radio" name="party-mode" value="custom" class="mr-1">Custom</label>
+          </div>
+          <select id="party-select" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Select a device...</option>
+          </select>
+          <input id="party-custom" type="text" class="hidden w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter party ID">
+        </div>
+        <div>
+          <label for="qr-data" class="block text-sm font-medium text-gray-300 mb-1">QR Code Data</label>
+          <textarea id="qr-data" rows="3" required class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Paste QR code data..."></textarea>
+        </div>
+        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded transition-colors">Send Notification</button>
+        <div id="notify-result" class="text-sm hidden"></div>
+      </form>
+    </section>
+  </div>
+  <script src="/ui/static/src/app.js"></script>
+</body>
+</html>

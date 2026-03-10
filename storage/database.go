@@ -196,6 +196,47 @@ func (d *Database) IsDeviceRegistered(ctx context.Context, vaultId string) (bool
 	return dbResult.RowsAffected > 0, nil
 }
 
+type VaultSummary struct {
+	VaultID     string `json:"vault_id"`
+	DeviceCount int    `json:"device_count"`
+}
+
+func (d *Database) ListAllVaults(ctx context.Context) ([]VaultSummary, error) {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return nil, err
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer cancel()
+	var vaults []VaultSummary
+	result := d.db.WithContext(newContext).
+		Model(&models.DeviceDBModel{}).
+		Select("vault_id, COUNT(*) as device_count").
+		Group("vault_id").
+		Order("vault_id").
+		Find(&vaults)
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to list vaults: %w", result.Error)
+	}
+	return vaults, nil
+}
+
+func (d *Database) ListDevicesByVault(ctx context.Context, vaultId string) ([]models.DeviceDBModel, error) {
+	if err := contexthelper.CheckCancellation(ctx); err != nil {
+		return nil, err
+	}
+	if vaultId == "" {
+		return nil, fmt.Errorf("vaultId is empty")
+	}
+	newContext, cancel := contexthelper.GetNewTimeoutContext(ctx, 5*time.Second)
+	defer cancel()
+	var devices []models.DeviceDBModel
+	result := d.db.WithContext(newContext).Where("vault_id = ?", vaultId).Find(&devices)
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to list devices: %w", result.Error)
+	}
+	return devices, nil
+}
+
 func (d *Database) Close() error {
 	sqlDB, err := d.db.DB()
 	if err != nil {

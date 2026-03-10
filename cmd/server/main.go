@@ -90,6 +90,11 @@ func main() {
 
 	wsHandler := ws.NewHandler(streamStore, db, streamRedis)
 
+	var inspector *asynq.Inspector
+	if cfg.UI {
+		inspector = asynq.NewInspector(redisOptions)
+	}
+
 	defer func() {
 		if err := cacheClient.Close(); err != nil {
 			log.Printf("fail to close redis client, err: %v", err)
@@ -100,9 +105,14 @@ func main() {
 		if err := streamStore.Close(); err != nil {
 			log.Printf("fail to close stream store, err: %v", err)
 		}
+		if inspector != nil {
+			if err := inspector.Close(); err != nil {
+				log.Printf("fail to close asynq inspector, err: %v", err)
+			}
+		}
 	}()
 
-	apiServer, err := api.NewServer(cfg.Server.Port, sdClient, db, asynqClient, cacheClient, streamStore, wsHandler, cfg.VAPIDPublicKey)
+	apiServer, err := api.NewServer(cfg.Server.Port, sdClient, db, asynqClient, cacheClient, streamStore, wsHandler, cfg.VAPIDPublicKey, inspector, cfg.UI)
 	if err != nil {
 		panic(err)
 	}

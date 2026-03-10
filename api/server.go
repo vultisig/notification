@@ -29,6 +29,8 @@ type Server struct {
 	streamStore    *stream.Store
 	vapidPublicKey string
 	wsHandler      *ws.Handler
+	inspector      *asynq.Inspector
+	uiEnabled      bool
 }
 
 func NewServer(port int64, sdClient *statsd.Client,
@@ -37,7 +39,9 @@ func NewServer(port int64, sdClient *statsd.Client,
 	cacheClient *cache.RedisStorage,
 	streamStore *stream.Store,
 	wsHandler *ws.Handler,
-	vapidPublicKey string) (*Server, error) {
+	vapidPublicKey string,
+	inspector *asynq.Inspector,
+	uiEnabled bool) (*Server, error) {
 	if port <= 0 {
 		return nil, fmt.Errorf("invalid port number: %d", port)
 	}
@@ -69,6 +73,8 @@ func NewServer(port int64, sdClient *statsd.Client,
 		streamStore:    streamStore,
 		vapidPublicKey: vapidPublicKey,
 		wsHandler:      wsHandler,
+		inspector:      inspector,
+		uiEnabled:      uiEnabled,
 	}, nil
 }
 
@@ -93,6 +99,10 @@ func (s *Server) StartServer() error {
 	e.POST("/notify", s.SendNotification)
 	e.GET("/vapid-public-key", s.GetVAPIDPublicKey)
 	e.GET("/ws", echo.WrapHandler(s.wsHandler))
+
+	if s.uiEnabled {
+		s.registerUIRoutes(e)
+	}
 
 	return e.Start(fmt.Sprintf(":%d", s.port))
 }
