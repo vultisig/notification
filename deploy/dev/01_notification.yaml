@@ -9,3 +9,4 @@ data:
   certificate: "/etc/notification/sandbox.p12"
   production: "false"
   vapid-public-key: "BP0Bxc6TYi5-zzB2MEieTbqlKgMkvcY6p1epLnnQ2U9DSap6emmdWn3RqqnkzqJnoys8kZ9dTaAmmAoiMoj5vi4"
+  ui: "true"

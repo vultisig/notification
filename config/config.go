@@ -23,6 +23,7 @@ type Config struct {
 	VAPIDPublicKey      string         `mapstructure:"vapid-public-key" json:"vapid-public-key,omitempty"`
 	VAPIDPrivateKey     string         `mapstructure:"vapid-private-key" json:"vapid-private-key,omitempty"`
 	VAPIDSubscriber     string         `mapstructure:"vapid-subscriber" json:"vapid-subscriber,omitempty"`
+	UI                  bool           `mapstructure:"ui" json:"ui,omitempty"`
 }
 
 type StreamConfig struct {
@@ -55,6 +56,7 @@ func GetConfigure() (*Config, error) {
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
 	viper.SetDefault("database.dsn", "postgres://localhost:5432/notification")
+	viper.SetDefault("ui", false)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
