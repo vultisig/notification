@@ -9,7 +9,7 @@ import (
 	"github.com/vultisig/notification/config"
 	"github.com/vultisig/notification/contexthelper"
 	"github.com/vultisig/notification/models"
-	"gorm.io/driver/postgres"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
@@ -23,7 +23,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 	if nil == cfg {
 		return nil, fmt.Errorf("config is nil")
 	}
-	database, err := gorm.Open(postgres.Open(cfg.DSN),
+	database, err := gorm.Open(mysql.Open(cfg.DSN),
 		&gorm.Config{
 			Logger: logger.Default.LogMode(logger.Error),
 		})
@@ -31,7 +31,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	database.Exec("DROP INDEX IF EXISTS idx_vault_party")
+	database.Exec("DROP INDEX idx_vault_party ON devices")
 	err = database.AutoMigrate(&models.DeviceDBModel{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)

@@ -1,12 +1,17 @@
 services:
   db:
-    image: postgres:latest
+    image: mysql:8
     environment:
-      POSTGRES_PASSWORD: ""
-      POSTGRES_DB: notification
-      POSTGRES_HOST_AUTH_METHOD: trust
+      MYSQL_ROOT_PASSWORD: "password"
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: notification
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${MYSQL_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine

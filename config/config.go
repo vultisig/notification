@@ -54,7 +54,7 @@ func GetConfigure() (*Config, error) {
 
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.host", "localhost")
-	viper.SetDefault("database.dsn", "postgres://localhost:5432/notification")
+	viper.SetDefault("database.dsn", "root:@tcp(localhost:3306)/notification?charset=utf8mb4&parseTime=True&loc=Local")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
