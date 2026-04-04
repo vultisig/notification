@@ -49,8 +49,8 @@ func (d *Database) RegisterDevice(ctx context.Context, device models.Device) err
 	deviceModel := device.GetDeviceDBModel()
 	result := d.db.WithContext(newContext).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}, {Name: "token"}},
-			DoUpdates: clause.AssignmentColumns([]string{"device_type", "updated_at"}),
+			Columns:   []clause.Column{{Name: "vault_id"}, {Name: "party_name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"token", "device_type", "updated_at"}),
 		}).
 		Create(&deviceModel)
 	if result.Error != nil {
