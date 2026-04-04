@@ -31,7 +31,7 @@ func NewDatabase(cfg *config.DatabaseConfig) (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	database.Exec("DROP INDEX IF EXISTS idx_vault_party ON devices")
+	database.Exec("DROP INDEX idx_vault_party ON devices")
 	err = database.AutoMigrate(&models.DeviceDBModel{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
