@@ -44,7 +44,8 @@ func (s *Store) Publish(ctx context.Context, vaultID string, req PublishRequest)
 	minID := fmt.Sprintf("%d-0", time.Now().Add(-s.messageTTL).UnixMilli())
 	_, err := s.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey(vaultID),
-		MinID:  "~" + minID,
+		MinID:  minID,
+		Approx: true,
 		Values: map[string]interface{}{
 			"vault_name":   req.VaultName,
 			"qr_code_data": req.QRCodeData,
