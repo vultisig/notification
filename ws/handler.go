@@ -75,7 +75,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Set a TTL on the counter so it doesn't leak if the server crashes.
 	h.rdb.Expire(r.Context(), connKey, 10*time.Minute)
 
-	conn, err := websocket.Accept(w, r, nil)
+	// Cloudflare may proxy WebSocket upgrades as HTTP/1.0; the coder/websocket
+	// library requires HTTP/1.1+. Force the protocol version so Accept succeeds.
+	if r.ProtoMajor == 1 && r.ProtoMinor == 0 {
+		r.Proto = "HTTP/1.1"
+		r.ProtoMinor = 1
+	}
+
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{"*"},
+	})
 	if err != nil {
 		h.rdb.Decr(r.Context(), connKey)
 		h.logger.WithError(err).Error("websocket accept")
