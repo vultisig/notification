@@ -7,6 +7,7 @@ import (
 )
 
 type Device struct {
+	// VaultId: raw ECDSA public key (66 hex chars) or SHA256 hash (64 hex chars).
 	VaultId    string `gorm:"type:varchar(128);not null;uniqueIndex:idx_vault_party" json:"vault_id" binding:"required"`
 	PartyName  string `gorm:"type:varchar(128);not null;uniqueIndex:idx_vault_party" json:"party_name" binding:"required"`
 	Token      string `gorm:"type:varchar(512);not null;uniqueIndex:idx_vault_party" json:"token" binding:"required"`
