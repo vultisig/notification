@@ -140,7 +140,7 @@ Unregister one or all devices for a party.
 
 If `token` is provided, only that specific device is removed. If omitted, all devices for the `(vault_id, party_name)` pair are removed.
 
-**Response:** `200 OK` on success.
+**Response:** `200 OK` on success. The call is **idempotent**: if no matching device exists (already unregistered or never registered), the server still returns `200 OK`.
 
 ---
 

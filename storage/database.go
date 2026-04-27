@@ -99,9 +99,7 @@ func (d *Database) UnregisterDevice(ctx context.Context, vaultId, tokenId string
 	if result.Error != nil {
 		return fmt.Errorf("failed to unregister device: %w", result.Error)
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("no device found with vaultId: %s", vaultId)
-	}
+	// Idempotent: no row is a successful no-op (already removed or never registered).
 	return nil
 }
 func (d *Database) UnregisterDeviceByParty(ctx context.Context, vaultId, partyName string) error {
@@ -122,9 +120,7 @@ func (d *Database) UnregisterDeviceByParty(ctx context.Context, vaultId, partyNa
 	if result.Error != nil {
 		return fmt.Errorf("failed to unregister device: %w", result.Error)
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("no device found with vaultId: %s and partyName: %s", vaultId, partyName)
-	}
+	// Idempotent: no row is a successful no-op.
 	return nil
 }
 
@@ -149,9 +145,7 @@ func (d *Database) UnregisterDeviceByPartyAndToken(ctx context.Context, vaultId,
 	if result.Error != nil {
 		return fmt.Errorf("failed to unregister device: %w", result.Error)
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("no device found with vaultId: %s, partyName: %s, and token: %s...", vaultId, partyName, token[:min(len(token), 8)])
-	}
+	// Idempotent: no row is a successful no-op.
 	return nil
 }
 
